@@ -2,35 +2,32 @@ import { Link, useLocation } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
   LayoutDashboard,
-  MessageSquare,
-  Upload,
-  Clock,
-  Bell,
   Users,
+  CalendarPlus,
+  Bell,
   Brain,
+  LogOut,
   Menu,
   X,
-  LogOut,
+  HeartPulse,
 } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
 
 const navItems = [
-  { path: "/patientdashboard", label: "Dashboard", icon: LayoutDashboard },
-  { path: "/assistant", label: "AI Assistant", icon: MessageSquare },
-  { path: "/upload", label: "Upload Medicine", icon: Upload },
-  { path: "/timeline", label: "Memory Timeline", icon: Clock },
-  { path: "/notifications", label: "Notifications", icon: Bell },
-  { path: "/caregiver", label: "CareTaker", icon: Users },
-  { path: "/engine", label: "Memory Engine", icon: Brain },
+  { path: "/caregiverdashboard", label: "Dashboard", icon: LayoutDashboard },
+  { path: "/caregiver/patients", label: "My Patients", icon: Users },
+  { path: "/caregiver/reminders", label: "Reminders", icon: CalendarPlus },
+  { path: "/caregiver/notifications", label: "Notifications", icon: Bell },
+  { path: "/caregiver/memory-requests", label: "Memory Requests", icon: Brain },
 ];
 
-interface AppLayoutProps {
+interface CareTakerLayoutProps {
   children: React.ReactNode;
 }
 
-export function AppLayout({ children }: AppLayoutProps) {
+export function CareTakerLayout({ children }: CareTakerLayoutProps) {
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
   const { user, logout } = useAuth();
@@ -61,11 +58,11 @@ export function AppLayout({ children }: AppLayoutProps) {
         <div className="flex h-full flex-col">
           <div className="flex items-center gap-3 border-b border-slate-100 px-6 py-5">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-sky-500 to-sky-600 shadow-sm">
-              <Brain className="h-5 w-5 text-white" />
+              <HeartPulse className="h-5 w-5 text-white" />
             </div>
             <div>
               <h1 className="text-lg font-bold text-slate-900">CogniCare</h1>
-              <p className="text-xs text-slate-500">AI Memory Assistant</p>
+              <p className="text-xs text-slate-500">CareTaker Portal</p>
             </div>
           </div>
 
@@ -78,14 +75,14 @@ export function AppLayout({ children }: AppLayoutProps) {
           <div className="border-t border-slate-100 p-4">
             <div className="flex items-center gap-3 rounded-xl bg-slate-50 p-3">
               <div className="flex h-9 w-9 items-center justify-center rounded-full bg-sky-100 text-sm font-bold text-sky-700">
-                {user && "name" in user ? user.name.charAt(0) : "P"}
+                {user && "name" in user ? user.name.charAt(0) : "CT"}
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium text-slate-900 truncate">
-                  {user && "name" in user ? user.name : "Patient"}
+                  {user && "name" in user ? user.name : "CareTaker"}
                 </p>
-                <p className="text-xs text-slate-500">
-                  Patient
+                <p className="text-xs text-slate-500 truncate">
+                  {user && "email" in user ? user.email : ""}
                 </p>
               </div>
               <button
@@ -104,9 +101,9 @@ export function AppLayout({ children }: AppLayoutProps) {
       <header className="sticky top-0 z-40 flex items-center justify-between border-b border-slate-100 bg-white/80 px-4 py-3 backdrop-blur-md lg:hidden">
         <div className="flex items-center gap-2">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-sky-600">
-            <Brain className="h-4 w-4 text-white" />
+            <HeartPulse className="h-4 w-4 text-white" />
           </div>
-          <span className="font-bold text-slate-900">CogniCare</span>
+          <span className="font-bold text-slate-900">CareTaker</span>
         </div>
         <button
           onClick={() => setMobileOpen(!mobileOpen)}
@@ -134,11 +131,11 @@ export function AppLayout({ children }: AppLayoutProps) {
           >
             <div className="mb-6 flex items-center gap-3 px-2 pt-2">
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-600">
-                <Brain className="h-5 w-5 text-white" />
+                <HeartPulse className="h-5 w-5 text-white" />
               </div>
               <div>
                 <h1 className="font-bold text-slate-900">CogniCare</h1>
-                <p className="text-xs text-slate-500">AI Memory Assistant</p>
+                <p className="text-xs text-slate-500">CareTaker Portal</p>
               </div>
             </div>
             <div className="space-y-1">

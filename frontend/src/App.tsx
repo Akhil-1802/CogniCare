@@ -1,103 +1,99 @@
 import { Routes, Route } from "react-router-dom";
 import { AppLayout } from "@/components/layout/AppLayout";
+import { CareTakerLayout } from "@/components/layout/CareTakerLayout";
 import Dashboard from "@/pages/Dashboard";
 import AIAssistant from "@/pages/AIAssistant";
 import UploadMedicine from "@/pages/UploadMedicine";
 import MemoryTimeline from "@/pages/MemoryTimeline";
 import MemoryDetails from "@/pages/MemoryDetails";
-import ConnectedCaregiver from "@/pages/ConnectedCaregiver";
+import ConnectedCareTaker from "@/pages/ConnectedCaregiver";
 import NotificationFlow from "@/pages/NotificationFlow";
 import CognitiveEngine from "@/pages/CognitiveEngine";
-import CaregiverDashboard from "./pages/CareGiverDashboard";
+import CareTakerDashboard from "./pages/CareGiverDashboard";
 import Auth from "./pages/Auth";
 import Home from "./pages/Home";
 
 function App() {
-  
   return (
     <Routes>
-      {/* Routes with AppLayout */}
+      {/* Public routes */}
+      <Route path="/" element={<Home />} />
+      <Route path="/auth" element={<Auth />} />
+
+      {/* Patient routes (AppLayout) */}
       <Route
+        path="/patientdashboard"
         element={
           <AppLayout>
             <Dashboard />
           </AppLayout>
         }
-        path="/patientdashboard"
       />
-
       <Route
+        path="/assistant"
         element={
           <AppLayout>
             <AIAssistant />
           </AppLayout>
         }
-        path="/assistant"
       />
-
       <Route
+        path="/upload"
         element={
           <AppLayout>
             <UploadMedicine />
           </AppLayout>
         }
-        path="/upload"
       />
-
       <Route
+        path="/timeline"
         element={
           <AppLayout>
             <MemoryTimeline />
           </AppLayout>
         }
-        path="/timeline"
       />
-
       <Route
+        path="/memory/:id"
         element={
           <AppLayout>
             <MemoryDetails />
           </AppLayout>
         }
-        path="/memory/:id"
       />
-
       <Route
+        path="/caregiver"
         element={
           <AppLayout>
-            <ConnectedCaregiver />
+            <ConnectedCareTaker />
           </AppLayout>
         }
-        path="/caregiver"
       />
-
       <Route
+        path="/notifications"
         element={
           <AppLayout>
             <NotificationFlow />
           </AppLayout>
         }
-        path="/notifications"
       />
-
       <Route
+        path="/engine"
         element={
           <AppLayout>
             <CognitiveEngine />
           </AppLayout>
         }
-        path="/engine"
       />
 
-      {/* No layout */}
+      {/* CareTaker routes (CareTakerLayout) */}
       <Route
         path="/caregiverdashboard"
-        element={<CaregiverDashboard />}
-      />
-      <Route path="/auth" element={<Auth/>} />
-      <Route
-        path="/"
-        element={<Home />}
+        element={
+          <CareTakerLayout>
+            <CareTakerDashboard />
+          </CareTakerLayout>
+        }
       />
     </Routes>
   );

@@ -37,7 +37,7 @@ export interface MemoryExtraction {
   frequency?: string;
 }
 
-export interface Caregiver {
+export interface CareTaker {
   name: string;
   relationship: string;
   status: "Online" | "Offline";

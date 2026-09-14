@@ -38,13 +38,13 @@ const quickActions = [
   },
   {
     title: "Notifications",
-    description: "Caregiver alert flow",
+    description: "CareTaker alert flow",
     icon: Bell,
     path: "/notifications",
     color: "from-amber-500 to-orange-600",
   },
   {
-    title: "Connected Caregiver",
+    title: "Connected CareTaker",
     description: "Emily Johnson — Online",
     icon: Users,
     path: "/caregiver",
@@ -113,7 +113,7 @@ export default function Dashboard() {
                 </p>
               </div>
               <Badge className="bg-white/20 text-white border-0 hover:bg-white/20">
-                {dashboardSummary.caregiverStatus}
+                {dashboardSummary.careTakerStatus}
               </Badge>
             </div>
 

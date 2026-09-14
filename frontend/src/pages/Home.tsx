@@ -27,10 +27,10 @@ const features = [
       "Never miss medications with intelligent reminder scheduling.",
   },
   {
-    title: "Caregiver Dashboard",
+    title: "CareTaker Dashboard",
     icon: Users,
     description:
-      "Caregivers can validate memories and monitor patient progress.",
+      "CareTakers can validate memories and monitor patient progress.",
   },
   {
     title: "Medical Documents",
@@ -101,7 +101,7 @@ export default function Home() {
               for people with Mild Cognitive Impairment and early-stage
               Alzheimer's disease. It remembers conversations, medicine,
               appointments, and important information while enabling
-              caregivers to validate memories.
+              CareTakers to validate memories.
             </p>
   
             <div className="mt-10 flex gap-4">
@@ -211,9 +211,9 @@ Built for Alzheimer's & Mild Cognitive Impairment
 <p className="mx-auto mt-8 max-w-3xl text-lg leading-8 text-slate-600">
 
 CogniCare combines Large Language Models, semantic memory retrieval,
-caregiver validation and multimodal understanding to provide a secure,
+careTaker validation and multimodal understanding to provide a secure,
 personalized cognitive assistant that helps patients retain important
-information while keeping caregivers actively involved.
+information while keeping CareTakers actively involved.
 
 </p>
 

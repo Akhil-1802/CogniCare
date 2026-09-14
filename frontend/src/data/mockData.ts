@@ -1,8 +1,8 @@
-import type { Caregiver, Memory } from "@/types";
+import type { CareTaker, Memory } from "@/types";
 
 export const patientName = "Margaret Chen";
 
-export const caregiver: Caregiver = {
+export const careTaker: CareTaker = {
   name: "Emily Johnson",
   relationship: "Daughter",
   status: "Online",
@@ -90,7 +90,7 @@ export const memories: Memory[] = [
     icon: "👓",
     date: "Yesterday, 2:30 PM",
     dateGroup: "Yesterday",
-    source: "Caregiver Response",
+    source: "CareTaker Response",
     confidence: 85,
     details: {
       Object: "Glasses",
@@ -111,7 +111,7 @@ export const suggestedQuestions = [
 export const dashboardSummary = {
   memoriesStored: 12,
   remindersToday: 3,
-  caregiverStatus: "Connected",
+  careTakerStatus: "Connected",
   lastInteraction: "9:15 AM",
 };
 
@@ -154,8 +154,8 @@ export const engineSteps = [
   },
   {
     id: 7,
-    title: "Notify Caregiver if Required",
-    description: "Low-confidence responses trigger caregiver alerts.",
+    title: "Notify CareTaker if Required",
+    description: "Low-confidence responses trigger CareTaker alerts.",
     icon: "Bell",
   },
 ];

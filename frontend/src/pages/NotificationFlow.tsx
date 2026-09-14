@@ -13,7 +13,7 @@ import {
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { caregiver } from "@/data/mockData";
+import { careTaker } from "@/data/mockData";
 
 type FlowStep =
   | "idle"
@@ -73,12 +73,12 @@ export default function NotificationFlow() {
               <Bell className="h-8 w-8 text-sky-600" />
             </div>
             <h3 className="text-lg font-semibold text-slate-900">
-              Caregiver Notification Demo
+              CareTaker Notification Demo
             </h3>
             <p className="mt-2 max-w-md text-sm text-slate-500">
               Click &quot;Start Demo&quot; to simulate a scenario where the patient
               asks about their glasses, no memory is found, and the connected
-              caregiver is notified.
+              CareTaker is notified.
             </p>
           </CardContent>
         </Card>
@@ -148,12 +148,12 @@ export default function NotificationFlow() {
                   </div>
                   <div className="flex-1">
                     <p className="font-semibold text-slate-900">
-                      Notification Sent to Caregiver
+                      Notification Sent to CareTaker
                     </p>
                     <div className="mt-3 space-y-2 text-sm">
                       <div className="flex justify-between">
-                        <span className="text-slate-500">Caregiver</span>
-                        <span className="font-medium">{caregiver.name}</span>
+                        <span className="text-slate-500">CareTaker</span>
+                        <span className="font-medium">{careTaker.name}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-slate-500">Reason</span>
@@ -173,7 +173,7 @@ export default function NotificationFlow() {
 
             <Connector visible={["responded", "updated"].includes(step)} />
 
-            {/* Step 4: Caregiver Response */}
+            {/* Step 4: CareTaker Response */}
             {["responded", "updated"].includes(step) && (
               <FlowStepCard delay={0.3}>
                 <div className="flex gap-3">
@@ -182,7 +182,7 @@ export default function NotificationFlow() {
                   </div>
                   <div>
                     <p className="text-xs font-medium text-slate-500 mb-1">
-                      Caregiver replied
+                      CareTaker replied
                     </p>
                     <p className="rounded-2xl bg-slate-50 border border-slate-100 px-4 py-2.5 text-sm text-slate-800">
                       &quot;Your glasses are on the bedside table.&quot;

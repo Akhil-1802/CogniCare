@@ -14,9 +14,9 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
-import { caregiver } from "@/data/mockData";
+import { careTaker } from "@/data/mockData";
 
-export default function ConnectedCaregiver() {
+export default function ConnectedCareTaker() {
   const [alertSent, setAlertSent] = useState(false);
   const [sending, setSending] = useState(false);
 
@@ -35,9 +35,9 @@ export default function ConnectedCaregiver() {
       className="space-y-6 pb-20 lg:pb-8 max-w-2xl mx-auto"
     >
       <div className="text-center">
-        <h1 className="text-2xl font-bold text-slate-900">Connected Caregiver</h1>
+        <h1 className="text-2xl font-bold text-slate-900">Connected CareTaker</h1>
         <p className="mt-1 text-slate-500">
-          Your trusted caregiver receives alerts when assistance is needed
+          Your trusted CareTaker receives alerts when assistance is needed
         </p>
       </div>
 
@@ -45,16 +45,16 @@ export default function ConnectedCaregiver() {
         <div className="bg-gradient-to-br from-sky-500 to-blue-600 px-6 py-8 text-center text-white">
           <Avatar className="h-20 w-20 mx-auto border-4 border-white/30">
             <AvatarFallback className="bg-white/20 text-white text-xl font-bold">
-              {caregiver.avatar}
+              {careTaker.avatar}
             </AvatarFallback>
           </Avatar>
-          <h2 className="mt-4 text-xl font-bold">{caregiver.name}</h2>
+          <h2 className="mt-4 text-xl font-bold">{careTaker.name}</h2>
           <p className="text-sky-100 text-sm mt-1">
-            Relationship: {caregiver.relationship}
+            Relationship: {careTaker.relationship}
           </p>
           <Badge className="mt-3 bg-emerald-400/20 text-emerald-100 border-emerald-300/30">
             <span className="h-2 w-2 rounded-full bg-emerald-300 animate-pulse mr-1.5 inline-block" />
-            {caregiver.status}
+            {careTaker.status}
           </Badge>
         </div>
 
@@ -83,7 +83,7 @@ export default function ConnectedCaregiver() {
               <Heart className="h-5 w-5 text-sky-600 mt-0.5" />
               <div>
                 <p className="font-medium text-slate-900 text-sm">
-                  Caregiver Notifications
+                  CareTaker Notifications
                 </p>
                 <p className="text-xs text-slate-500 mt-1">
                   Emily receives alerts when memory confidence is low or when you
@@ -102,7 +102,7 @@ export default function ConnectedCaregiver() {
                 className="flex items-center justify-center gap-2 rounded-xl bg-emerald-50 p-4 text-emerald-700"
               >
                 <CheckCircle2 className="h-5 w-5" />
-                <span className="font-medium">Alert sent to {caregiver.name}</span>
+                <span className="font-medium">Alert sent to {careTaker.name}</span>
               </motion.div>
             ) : (
               <motion.div key="button" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>

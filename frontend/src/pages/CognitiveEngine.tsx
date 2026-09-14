@@ -116,9 +116,9 @@ export default function CognitiveEngine() {
             icon: Brain,
           },
           {
-            title: "Caregiver Bridge",
+            title: "CareTaker Bridge",
             description:
-              "When confidence falls below threshold, the system notifies the connected caregiver.",
+              "When confidence falls below threshold, the system notifies the connected CareTaker.",
             icon: Bell,
           },
         ].map((card, i) => (
@@ -146,7 +146,7 @@ export default function CognitiveEngine() {
           <p className="mt-2 text-slate-300 text-sm max-w-lg mx-auto">
             Patient chats with AI → Important information extracted → Stored in
             Vector Database → Appears in Memory Timeline → Retrieved when needed
-            → If confidence is low, caregiver is notified → Caregiver responds
+            → If confidence is low, CareTaker is notified → CareTaker responds
             → Memory updated
           </p>
         </CardContent>

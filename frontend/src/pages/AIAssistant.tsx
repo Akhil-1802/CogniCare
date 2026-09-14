@@ -80,7 +80,7 @@ function getSimulatedResponse(input: string): {
   if (lower.includes("glasses")) {
     return {
       content:
-        "I'm searching my memory... I couldn't find where your glasses are. My confidence is low on this. Would you like me to notify your caregiver?",
+        "I'm searching my memory... I couldn't find where your glasses are. My confidence is low on this. Would you like me to notify your CareTaker?",
     };
   }
   if (lower.includes("appointment") || lower.includes("doctor")) {
