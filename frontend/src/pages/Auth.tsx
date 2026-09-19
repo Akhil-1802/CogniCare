@@ -38,7 +38,12 @@ export default function Auth() {
   const { login, register, patientLogin } = useAuth();
 
   const careTakerLoginForm = useForm<{ email: string; password: string }>();
-  const patientLoginForm = useForm<{ patient_id: string; password: string }>();
+  const patientLoginForm = useForm<{ patient_id: string; password: string }>({
+    defaultValues: {
+      patient_id: "PAT-1E0BB4",
+      password: "12345678",
+    },
+  });
   const registerForm = useForm<RegisterForm>();
   const verifyForm = useForm<VerifyForm>();
 
@@ -277,6 +282,26 @@ export default function Auth() {
                       </form>
                     ) : (
                       <form onSubmit={patientLoginForm.handleSubmit(onPatientLogin)} className="space-y-5">
+                        <div className="rounded-xl bg-sky-50 border border-sky-200 px-4 py-3 text-sm text-slate-600">
+                          <p className="font-semibold text-sky-700">Test Account</p>
+                          <p className="mt-1">
+                            Patient ID:{" "}
+                            <span className="font-mono font-semibold">PAT-1E0BB4</span>
+                          </p>
+                          <p>
+                            Password: <span className="font-mono font-semibold">12345678</span>
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              patientLoginForm.setValue("patient_id", "PAT-1E0BB4");
+                              patientLoginForm.setValue("password", "12345678");
+                            }}
+                            className="mt-1 font-medium text-sky-600 hover:underline"
+                          >
+                            Use test credentials
+                          </button>
+                        </div>
                         <div>
                           <label className="text-sm font-medium text-slate-700">Patient ID</label>
                           <Input

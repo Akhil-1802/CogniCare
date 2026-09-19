@@ -10,8 +10,18 @@ import ConnectedCareTaker from "@/pages/ConnectedCaregiver";
 import NotificationFlow from "@/pages/NotificationFlow";
 import CognitiveEngine from "@/pages/CognitiveEngine";
 import CareTakerDashboard from "./pages/CareGiverDashboard";
+import MyPatients from "./pages/MyPatients";
 import Auth from "./pages/Auth";
 import Home from "./pages/Home";
+
+function ComingSoon({ title }: { title: string }) {
+  return (
+    <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-10 text-center">
+      <h1 className="text-xl font-bold text-slate-900">{title}</h1>
+      <p className="mt-2 text-sm text-slate-500">This section is coming soon.</p>
+    </div>
+  );
+}
 
 function App() {
   return (
@@ -92,6 +102,38 @@ function App() {
         element={
           <CareTakerLayout>
             <CareTakerDashboard />
+          </CareTakerLayout>
+        }
+      />
+      <Route
+        path="/caregiver/patients"
+        element={
+          <CareTakerLayout>
+            <MyPatients />
+          </CareTakerLayout>
+        }
+      />
+      <Route
+        path="/caregiver/reminders"
+        element={
+          <CareTakerLayout>
+            <MyPatients />
+          </CareTakerLayout>
+        }
+      />
+      <Route
+        path="/caregiver/notifications"
+        element={
+          <CareTakerLayout>
+            <ComingSoon title="Notifications" />
+          </CareTakerLayout>
+        }
+      />
+      <Route
+        path="/caregiver/memory-requests"
+        element={
+          <CareTakerLayout>
+            <ComingSoon title="Memory Requests" />
           </CareTakerLayout>
         }
       />

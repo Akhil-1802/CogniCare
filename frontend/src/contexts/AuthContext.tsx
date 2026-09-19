@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import { useNavigate } from "react-router-dom";
 import api, { setAccessToken } from "@/lib/api";
 
 interface User {
@@ -46,6 +47,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [role, setRole] = useState<"CareTaker" | "Patient" | null>(null);
   const [patients, setPatients] = useState<Patient[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const navigate = useNavigate();
 
   useEffect(() => {
     const init = async () => {
@@ -129,6 +131,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
     setRole(null);
     setPatients([]);
+    navigate("/");
   };
 
   return (

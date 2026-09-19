@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { Link } from "react-router-dom";
 import {
@@ -20,6 +20,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
 import AddPatientModal from "@/components/AddPatientModal";
+import { fetchMyReminders, todayISO } from "@/lib/reminders";
 
 const container = {
   hidden: { opacity: 0 },
@@ -45,8 +46,24 @@ const item = {
 export default function CareTakerDashboard() {
   const { user, patients } = useAuth();
   const [showAddPatient, setShowAddPatient] = useState(false);
+  const [remindersToday, setRemindersToday] = useState(0);
+  const [remindersDoneToday, setRemindersDoneToday] = useState(0);
 
   const caretakerName = user && "name" in user ? user.name : "CareTaker";
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const data = await fetchMyReminders(todayISO());
+        setRemindersToday(data.length);
+        setRemindersDoneToday(data.filter((r) => r.is_done).length);
+      } catch {
+        setRemindersToday(0);
+        setRemindersDoneToday(0);
+      }
+    };
+    load();
+  }, []);
 
   return (
     <motion.div
@@ -114,15 +131,15 @@ export default function CareTakerDashboard() {
               </div>
 
               <div className="rounded-xl bg-white/10 p-4 backdrop-blur-sm">
-                <p className="text-2xl font-bold">0</p>
+                <p className="text-2xl font-bold">{remindersToday}</p>
 
                 <p className="mt-1 text-xs text-sky-100">Reminders Today</p>
               </div>
 
               <div className="rounded-xl bg-white/10 p-4 backdrop-blur-sm">
-                <p className="text-2xl font-bold">0</p>
+                <p className="text-2xl font-bold">{remindersDoneToday}</p>
 
-                <p className="mt-1 text-xs text-sky-100">Critical Alerts</p>
+                <p className="mt-1 text-xs text-sky-100">Fulfilled Today</p>
               </div>
             </div>
           </CardContent>
@@ -168,26 +185,29 @@ export default function CareTakerDashboard() {
         ) : (
           <div className="space-y-3">
             {patients.map((patient) => (
-              <Card key={patient.id} className="transition-shadow hover:shadow-md">
-                <CardContent className="flex items-center gap-4 p-4">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-sky-100 text-lg">
-                    👤
-                  </div>
+              <Link key={patient.id} to="/caregiver/patients">
+                <Card className="transition-shadow hover:shadow-md">
+                  <CardContent className="flex items-center gap-4 p-4">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-sky-100 text-lg">
+                      👤
+                    </div>
 
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate font-medium text-slate-900">
-                      {patient.name}
-                    </p>
-                    <p className="text-sm text-slate-500">
-                      {patient.id} &middot; {patient.location}
-                    </p>
-                  </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-medium text-slate-900">
+                        {patient.name}
+                      </p>
+                      <p className="text-sm text-slate-500">
+                        {patient.id} &middot; {patient.location}
+                      </p>
+                    </div>
 
-                  <Badge className="bg-green-100 text-green-700">
-                    Active
-                  </Badge>
-                </CardContent>
-              </Card>
+                    <Badge className="bg-green-100 text-green-700">
+                      Active
+                    </Badge>
+                    <span className="text-sm font-medium text-sky-600">Manage →</span>
+                  </CardContent>
+                </Card>
+              </Link>
             ))}
           </div>
         )}

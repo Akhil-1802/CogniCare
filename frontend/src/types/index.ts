@@ -44,6 +44,33 @@ export interface CareTaker {
   avatar: string;
 }
 
+export type ReminderType = "medicine" | "appointment" | "general";
+
+export interface Reminder {
+  id: string;
+  patient_id: string;
+  caretaker_id: string;
+  title: string;
+  type: ReminderType;
+  dosage?: string | null;
+  reminder_date: string;
+  reminder_time: string;
+  notes?: string | null;
+  is_done: boolean;
+  done_at?: string | null;
+  done_by?: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface ReminderDraft {
+  title: string;
+  type: ReminderType;
+  dosage: string;
+  reminder_time: string;
+  notes: string;
+}
+
 export interface MedicineExtraction {
   medicine: string;
   dosage: string;
