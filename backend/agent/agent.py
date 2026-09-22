@@ -1,17 +1,16 @@
-from langchain.agents import create_agent
-from agent.prompts import SYSTEM_PROMPT
-class CogniAgent:
-    def __init__(self,llm,tools):
-        self.llm = llm
-        self.prompt = SYSTEM_PROMPT
-        self.tools = tools
-        self.agent = create_agent(
-            model= self.llm,
-            tools= self.tools,
-            system_prompt= self.prompt
-        )
+"""Backward-compatible wrapper. New code should use agent.orchestrator."""
+from agent.orchestrator import AgentOrchestrator, orchestrator  # noqa: F401
 
-    def run(self):
-        return self.agent.invoke()
-    
-    
+
+class CogniAgent:
+    """Legacy stub kept so old imports don't break."""
+
+    def __init__(self, llm=None, tools=None):
+        self.llm = llm
+        self.tools = tools or []
+        self.orchestrator = AgentOrchestrator()
+
+    def run(self, patient_id: str = "", message: str = ""):
+        if not patient_id or not message:
+            return {"response": "CogniAgent ready. Use orchestrator.chat(patient_id, message)."}
+        return self.orchestrator.chat(patient_id, message)

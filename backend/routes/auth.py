@@ -11,6 +11,7 @@ from utils.auth import (
     generate_verification_code,
 )
 from utils.email import send_verification_email
+from utils.cookies import set_refresh_cookie, clear_refresh_cookie
 from datetime import datetime, timedelta, timezone
 import uuid
 
@@ -143,15 +144,7 @@ def login(data: LoginRequest, response: Response):
         "expires_at": (datetime.now(timezone.utc) + timedelta(days=7)).isoformat(),
     }).execute()
 
-    response.set_cookie(
-        key="refresh_token",
-        value=refresh_token,
-        httponly=True,
-        secure=True,
-        samesite="strict",
-        max_age=7 * 24 * 60 * 60,
-        path="/",
-    )
+    set_refresh_cookie(response, refresh_token)
 
     return {
         "access_token": access_token,
@@ -202,15 +195,7 @@ def refresh_token(request: Request, response: Response):
         "expires_at": (datetime.now(timezone.utc) + timedelta(days=7)).isoformat(),
     }).execute()
 
-    response.set_cookie(
-        key="refresh_token",
-        value=new_refresh,
-        httponly=True,
-        secure=True,
-        samesite="strict",
-        max_age=7 * 24 * 60 * 60,
-        path="/",
-    )
+    set_refresh_cookie(response, new_refresh)
 
     return {
         "access_token": new_access,
@@ -224,7 +209,7 @@ def logout(request: Request, response: Response):
     if token:
         supabase.table("refresh_tokens").delete().eq("token", token).execute()
 
-    response.delete_cookie("refresh_token", path="/")
+    clear_refresh_cookie(response)
     return {"message": "Logged out"}
 
 

@@ -42,7 +42,15 @@ api.interceptors.response.use(
   async (error) => {
     const originalRequest = error.config;
 
-    if (error.response?.status === 401 && !originalRequest._retry) {
+    // Never retry login/refresh calls themselves to avoid loops.
+    const url: string = originalRequest?.url || "";
+    const isAuthCall =
+      url.includes("/auth/login") ||
+      url.includes("/auth/refresh") ||
+      url.includes("/patient-auth/login") ||
+      url.includes("/patient-auth/refresh");
+
+    if (error.response?.status === 401 && !originalRequest._retry && !isAuthCall) {
       if (isRefreshing) {
         return new Promise((resolve, reject) => {
           failedQueue.push({ resolve, reject });
@@ -53,11 +61,22 @@ api.interceptors.response.use(
       isRefreshing = true;
 
       try {
-        const res = await axios.post(
-          "http://localhost:8000/auth/refresh",
-          {},
-          { withCredentials: true }
-        );
+        // CareTaker sessions refresh via /auth/refresh,
+        // Patient sessions via /patient-auth/refresh. Try both.
+        let res;
+        try {
+          res = await axios.post(
+            "http://localhost:8000/auth/refresh",
+            {},
+            { withCredentials: true }
+          );
+        } catch {
+          res = await axios.post(
+            "http://localhost:8000/patient-auth/refresh",
+            {},
+            { withCredentials: true }
+          );
+        }
         accessToken = res.data.access_token;
         processQueue(null);
         originalRequest.headers.Authorization = `Bearer ${accessToken}`;

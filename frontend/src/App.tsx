@@ -11,6 +11,8 @@ import NotificationFlow from "@/pages/NotificationFlow";
 import CognitiveEngine from "@/pages/CognitiveEngine";
 import CareTakerDashboard from "./pages/CareGiverDashboard";
 import MyPatients from "./pages/MyPatients";
+import CaretakerAiActivity from "./pages/CaretakerAiActivity";
+import CaregiverNotifications from "./pages/CaregiverNotifications";
 import Auth from "./pages/Auth";
 import Home from "./pages/Home";
 
@@ -125,7 +127,7 @@ function App() {
         path="/caregiver/notifications"
         element={
           <CareTakerLayout>
-            <ComingSoon title="Notifications" />
+            <CaregiverNotifications />
           </CareTakerLayout>
         }
       />
@@ -134,6 +136,14 @@ function App() {
         element={
           <CareTakerLayout>
             <ComingSoon title="Memory Requests" />
+          </CareTakerLayout>
+        }
+      />
+      <Route
+        path="/caregiver/ai-activity"
+        element={
+          <CareTakerLayout>
+            <CaretakerAiActivity />
           </CareTakerLayout>
         }
       />

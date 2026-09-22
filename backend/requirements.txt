@@ -1,7 +1,12 @@
-fastapi[standard]
+fastapi
 uvicorn
 python-dotenv
-supabase==2.31.0
+supabase
 langchain
+langchain-mistralai
+chromadb
 pyjwt
-python-multipart==0.0.32
+python-multipart
+email-validator
+pytest
+httpx

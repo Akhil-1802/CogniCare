@@ -12,6 +12,7 @@ from utils.auth import (
 from datetime import datetime, timedelta, timezone
 import uuid
 import secrets
+from utils.cookies import set_refresh_cookie, clear_refresh_cookie
 
 patient_auth_router = APIRouter(prefix="/patient-auth", tags=["Patient Auth"])
 
@@ -81,15 +82,7 @@ def patient_login(data: PatientLoginRequest, response: Response):
         "expires_at": (datetime.now(timezone.utc) + timedelta(days=7)).isoformat(),
     }).execute()
 
-    response.set_cookie(
-        key="refresh_token",
-        value=refresh_token,
-        httponly=True,
-        secure=True,
-        samesite="strict",
-        max_age=7 * 24 * 60 * 60,
-        path="/",
-    )
+    set_refresh_cookie(response, refresh_token)
 
     return {
         "access_token": access_token,
@@ -141,15 +134,7 @@ def patient_refresh(request: Request, response: Response):
         "expires_at": (datetime.now(timezone.utc) + timedelta(days=7)).isoformat(),
     }).execute()
 
-    response.set_cookie(
-        key="refresh_token",
-        value=new_refresh,
-        httponly=True,
-        secure=True,
-        samesite="strict",
-        max_age=7 * 24 * 60 * 60,
-        path="/",
-    )
+    set_refresh_cookie(response, new_refresh)
 
     return {
         "access_token": new_access,
@@ -163,7 +148,7 @@ def patient_logout(request: Request, response: Response):
     if token:
         supabase.table("refresh_tokens").delete().eq("token", token).execute()
 
-    response.delete_cookie("refresh_token", path="/")
+    clear_refresh_cookie(response)
     return {"message": "Logged out"}
 
 

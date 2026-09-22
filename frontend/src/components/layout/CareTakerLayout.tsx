@@ -10,15 +10,18 @@ import {
   Menu,
   X,
   HeartPulse,
+  Sparkles,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
+import { getNotificationCounts } from "@/lib/notifications";
 
 const navItems = [
   { path: "/caregiverdashboard", label: "Dashboard", icon: LayoutDashboard },
   { path: "/caregiver/patients", label: "My Patients", icon: Users },
   { path: "/caregiver/reminders", label: "Reminders", icon: CalendarPlus },
+  { path: "/caregiver/ai-activity", label: "AI Activity", icon: Sparkles },
   { path: "/caregiver/notifications", label: "Notifications", icon: Bell },
   { path: "/caregiver/memory-requests", label: "Memory Requests", icon: Brain },
 ];
@@ -30,23 +33,52 @@ interface CareTakerLayoutProps {
 export function CareTakerLayout({ children }: CareTakerLayoutProps) {
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [pendingCount, setPendingCount] = useState(0);
   const { user, logout } = useAuth();
+
+  useEffect(() => {
+    const fetchCounts = async () => {
+      try {
+        const counts = await getNotificationCounts();
+        setPendingCount(counts.pending_questions || 0);
+      } catch {
+        // Ignored
+      }
+    };
+    fetchCounts();
+    const interval = setInterval(fetchCounts, 15000);
+    return () => clearInterval(interval);
+  }, []);
 
   const NavLink = ({ path, label, icon: Icon }: (typeof navItems)[0]) => {
     const isActive = location.pathname === path;
+    const isNotifications = path === "/caregiver/notifications";
+
     return (
       <Link
         to={path}
         onClick={() => setMobileOpen(false)}
         className={cn(
-          "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200",
+          "flex items-center justify-between rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200",
           isActive
             ? "bg-sky-600 text-white shadow-sm"
             : "text-slate-600 hover:bg-sky-50 hover:text-sky-700"
         )}
       >
-        <Icon className="h-5 w-5 shrink-0" />
-        <span>{label}</span>
+        <div className="flex items-center gap-3">
+          <Icon className="h-5 w-5 shrink-0" />
+          <span>{label}</span>
+        </div>
+        {isNotifications && pendingCount > 0 && (
+          <span
+            className={cn(
+              "rounded-full px-2 py-0.5 text-xs font-bold",
+              isActive ? "bg-white text-sky-700" : "bg-amber-500 text-white animate-pulse"
+            )}
+          >
+            {pendingCount}
+          </span>
+        )}
       </Link>
     );
   };

@@ -102,10 +102,10 @@ export const memories: Memory[] = [
 ];
 
 export const suggestedQuestions = [
-  "Where did I keep my wallet?",
-  "Remind me to take medicine after breakfast.",
+  "Hello, how are you today?",
+  "What medicine do I take tonight?",
   "When is my doctor appointment?",
-  "Where are my glasses?",
+  "Tell me something cheerful to start my day.",
 ];
 
 export const dashboardSummary = {
