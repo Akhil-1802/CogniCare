@@ -41,6 +41,27 @@ export async function addRemindersBulk(
   return res.data;
 }
 
+export async function createSingleReminder(data: {
+  patient_id: string;
+  title: string;
+  type?: ReminderType;
+  reminder_date: string;
+  reminder_time: string;
+  dosage?: string | null;
+  notes?: string | null;
+}): Promise<{ message: string; reminder_id: string }> {
+  const res = await api.post("/reminders/", {
+    patient_id: data.patient_id,
+    title: data.title,
+    type: data.type || "general",
+    reminder_date: data.reminder_date,
+    reminder_time: data.reminder_time,
+    dosage: data.dosage || null,
+    notes: data.notes || null,
+  });
+  return res.data;
+}
+
 export async function updateReminder(
   reminderId: string,
   payload: Partial<Reminder> & { is_done?: boolean }

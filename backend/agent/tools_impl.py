@@ -166,11 +166,71 @@ def create_reminder(patient_id: str, data: dict):
     return row
 
 
+def get_patient_routine(patient_id: str, reminder_date: str | None = None):
+    """Fetches full daily routine (medicines, appointments, daily tasks) for a patient."""
+    target_date = reminder_date or _today()
+    try:
+        rows = (
+            supabase.table("reminders")
+            .select("*")
+            .eq("patient_id", patient_id)
+            .eq("reminder_date", target_date)
+            .order("reminder_time", desc=False)
+            .execute()
+        ).data or []
+        return rows
+    except Exception:
+        return []
+
+
+def save_to_routine(patient_id: str, data: dict):
+    """Saves an appointment, medicine, or daily activity into the patient's routine schedule.
+    Prevents exact duplicate entries on the same date/time."""
+    r_date = data.get("reminder_date") or _today()
+    r_time = (data.get("reminder_time") or "10:00")[:5]
+    title = (data.get("title") or "").strip()
+    rtype = data.get("type") or "general"
+    if rtype not in ("medicine", "appointment", "general"):
+        rtype = "general"
+
+    # Check for existing duplicate on the same date
+    try:
+        existing = (
+            supabase.table("reminders")
+            .select("*")
+            .eq("patient_id", patient_id)
+            .eq("reminder_date", r_date)
+            .execute()
+        ).data or []
+        title_lower = title.lower()
+        for item in existing:
+            item_title = (item.get("title") or "").lower()
+            item_time = str(item.get("reminder_time") or "")[:5]
+            if (item_title == title_lower and item_time == r_time) or (
+                title_lower in item_title and item_time == r_time
+            ):
+                return item  # Already exists, avoid duplicate
+    except Exception:
+        pass
+
+    clean_data = {
+        "title": title,
+        "type": rtype,
+        "reminder_date": r_date,
+        "reminder_time": r_time,
+        "dosage": data.get("dosage"),
+        "notes": data.get("notes") or "Saved to daily routine via CogniCare Assistant",
+    }
+    return create_reminder(patient_id, clean_data)
+
+
 # Tool registry exposed to the orchestrator (not directly to the LLM).
 TOOLS = {
     "get_today_medicines": get_today_medicines,
     "get_upcoming_appointments": get_upcoming_appointments,
     "get_patient_reminders": get_patient_reminders,
+    "get_patient_routine": get_patient_routine,
+    "save_to_routine": save_to_routine,
     "search_patient_memories": search_patient_memories,
     "get_memory": get_memory,
     "search_patient_documents": search_patient_documents,

@@ -11,6 +11,7 @@ import {
   Menu,
   X,
   LogOut,
+  CalendarCheck,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
@@ -19,6 +20,7 @@ import { getNotificationCounts } from "@/lib/notifications";
 
 const navItems = [
   { path: "/patientdashboard", label: "Dashboard", icon: LayoutDashboard },
+  { path: "/routine", label: "Daily Routine", icon: CalendarCheck },
   { path: "/assistant", label: "AI Assistant", icon: MessageSquare },
   { path: "/upload", label: "Upload Medicine", icon: Upload },
   { path: "/timeline", label: "Memory Timeline", icon: Clock },

@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { Link } from "react-router-dom";
 import {
   Send,
   Mic,
@@ -16,12 +17,15 @@ import {
   AlertTriangle,
   X,
   ScanLine,
+  CalendarCheck,
+  Clock,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { postAssistantChat, postAssistantChatWithFile, type DetectedMedicineInfo } from "@/lib/assistant";
 import { getPatientNotifications, markNotificationRead, type NotificationItem } from "@/lib/notifications";
+import type { Reminder } from "@/types";
 
 interface UiMessage {
   id: string;
@@ -37,6 +41,7 @@ interface UiMessage {
   file_preview?: string;
   file_type?: string;
   detected_medicine?: DetectedMedicineInfo;
+  routine_saved?: Reminder | null;
   ocr_summary?: string;
 }
 
@@ -44,6 +49,8 @@ const TOOL_FRIENDLY: Record<string, string> = {
   get_today_medicines: "medicine schedule",
   get_upcoming_appointments: "appointments",
   get_patient_reminders: "reminders",
+  get_patient_routine: "daily routine",
+  save_to_routine: "daily routine",
   search_patient_memories: "memories",
   search_patient_documents: "medical documents",
   create_reminder: "reminder creation",
@@ -175,6 +182,7 @@ export default function AIAssistant() {
         suggest_escalation: shouldEscalate,
         escalation_question: res.escalation_question || clean,
         detected_medicine: res.detected_medicine,
+        routine_saved: res.routine_saved || null,
         ocr_summary: res.ocr_summary,
       };
       setMessages((prev) => [...prev, assistantMsg]);
@@ -403,6 +411,49 @@ export default function AIAssistant() {
                         </motion.div>
                       )}
 
+                      {/* Routine Saved Confirmation Card */}
+                      {msg.routine_saved && (
+                        <motion.div
+                          initial={{ opacity: 0, scale: 0.98 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          className="mt-2.5 rounded-xl border border-sky-200 bg-gradient-to-br from-sky-50 to-blue-50/50 p-3.5 text-left shadow-sm"
+                        >
+                          <div className="flex items-center justify-between mb-1.5">
+                            <div className="flex items-center gap-1.5 text-xs font-bold text-sky-900">
+                              <CalendarCheck className="h-4 w-4 text-sky-600" />
+                              <span>Saved to Daily Routine</span>
+                            </div>
+                            <Badge
+                              variant="outline"
+                              className={`text-[10px] capitalize border bg-white ${
+                                msg.routine_saved.type === "appointment"
+                                  ? "text-violet-700 border-violet-200"
+                                  : msg.routine_saved.type === "medicine"
+                                  ? "text-sky-700 border-sky-200"
+                                  : "text-emerald-700 border-emerald-200"
+                              }`}
+                            >
+                              {msg.routine_saved.type}
+                            </Badge>
+                          </div>
+                          <p className="text-sm font-semibold text-slate-900">
+                            {msg.routine_saved.title}
+                          </p>
+                          <div className="mt-1.5 flex items-center justify-between text-xs text-slate-600">
+                            <span className="flex items-center gap-1 text-slate-500">
+                              <Clock className="h-3 w-3 text-sky-600" />
+                              {msg.routine_saved.reminder_time.slice(0, 5)} &middot; {msg.routine_saved.reminder_date}
+                            </span>
+                            <Link
+                              to="/routine"
+                              className="font-medium text-sky-600 hover:text-sky-700 underline text-xs"
+                            >
+                              View Routine &rarr;
+                            </Link>
+                          </div>
+                        </motion.div>
+                      )}
+
                       {/* Escalation interactive action card */}
                       {msg.suggest_escalation && !msg.escalation_handled && (
                         <motion.div
@@ -480,9 +531,10 @@ export default function AIAssistant() {
             </div>
             <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
               {[
+                "What's my appointment today?",
+                "What is my routine today?",
+                "I have a doctor appointment today at 3 PM",
                 "What medicine do I take today?",
-                "Can I take my blood pressure pills?",
-                "Check my prescription records",
                 "Where is my wallet?",
               ].map((q) => (
                 <button

@@ -1,12 +1,12 @@
 # CogniCare
 
-AI-powered cognitive memory assistant designed for individuals with Mild Cognitive Impairment (MCI) and early-stage Alzheimer's disease. CogniCare helps patients remember conversations, medicines, appointments, daily belongings (e.g., wallet, glasses), and important memories, while enabling CareTakers to validate memories, answer escalated patient inquiries, and manage care schedules.
+AI-powered cognitive memory assistant designed for individuals with Mild Cognitive Impairment (MCI) and early-stage Alzheimer's disease. CogniCare helps patients remember daily routines, medicines, doctor appointments, belongings (e.g., wallet, glasses), and important memories, while enabling CareTakers to validate memories, answer escalated patient inquiries, upload medical records, and manage care schedules.
 
 ---
 
 ## Tech Stack
 
-- **Backend:** FastAPI (Python), Supabase (PostgreSQL), LangChain, Mistral AI, ChromaDB (Vector Store), JWT Auth, SMTP
+- **Backend:** FastAPI (Python), Supabase (PostgreSQL), LangChain, Mistral AI, ChromaDB (Vector Store), PyMuPDF, Pillow, JWT Auth, SMTP
 - **Frontend:** React 18, TypeScript, Vite, Tailwind CSS, Framer Motion, Lucide Icons
 
 ---
@@ -16,25 +16,34 @@ AI-powered cognitive memory assistant designed for individuals with Mild Cogniti
 ```
 CogniCare/
 ├── backend/
-│   ├── agent/           # AI orchestrator, LLM planner, memory extraction, vectorstore
-│   ├── config/          # Environment settings
-│   ├── db/              # Supabase client & SQL migration schemas
-│   │   ├── agent_tables.sql          # Conversations, messages, memories, daily summaries
-│   │   ├── reminders_table.sql       # Medicine, appointment, general reminders
-│   │   └── notifications_table.sql   # Caretaker escalation & response notifications
-│   ├── routes/          # API routers (auth, patient_auth, reminders, assistant, caretaker_ai, notifications)
-│   ├── utils/           # JWT authentication, cookies, password hashing, email service
-│   ├── test/            # Pytest test suite
-│   ├── main.py          # FastAPI application entry point
-│   └── requirements.txt # Python dependencies
+│   ├── agent/                 # AI orchestrator, LLM planner, memory extraction, vectorstore, tools
+│   ├── config/                # Environment settings
+│   ├── db/                    # Supabase client & SQL migration schemas
+│   │   ├── agent_tables.sql         # Conversations, messages, memories, daily summaries
+│   │   ├── reminders_table.sql      # Medicine, appointment, general routine reminders
+│   │   ├── notifications_table.sql  # Caretaker escalation & response notifications
+│   │   └── documents_table.sql      # Patient medical documents & OCR records
+│   ├── routes/                # API routers (auth, patient_auth, reminders, assistant, caretaker_ai, notifications, documents)
+│   ├── services/              # Local OCR service & medical record cross-referencing
+│   ├── utils/                 # JWT authentication, cookies, password hashing, email service
+│   ├── test/                  # Pytest test suite (agent, routine, notifications, OCR pipeline)
+│   ├── main.py                # FastAPI application entry point
+│   └── requirements.txt       # Python dependencies
 ├── frontend/
 │   ├── src/
-│   │   ├── components/  # Layouts (AppLayout, CareTakerLayout) and UI components
-│   │   ├── contexts/    # AuthContext (CareTaker and Patient authentication state)
-│   │   ├── pages/       # Patient & Caregiver views (AIAssistant, CaregiverNotifications, Dashboard, etc.)
-│   │   ├── lib/         # Axios API client, assistant, reminders, and notifications services
-│   │   ├── types/       # TypeScript types
-│   │   └── data/        # Mock data & sample questions
+│   │   ├── components/        # Layouts (AppLayout, CareTakerLayout) and UI components
+│   │   ├── contexts/          # AuthContext (CareTaker and Patient authentication state)
+│   │   ├── pages/             # Patient & Caregiver views:
+│   │   │   ├── AIAssistant.tsx            # AI Chat with OCR upload & routine confirmation
+│   │   │   ├── PatientRoutine.tsx         # Dedicated daily routine & appointment manager
+│   │   │   ├── Dashboard.tsx              # Patient dashboard with live today's routine
+│   │   │   ├── CareGiverDashboard.tsx     # Caregiver dashboard & patient stats
+│   │   │   ├── MyPatients.tsx             # Caregiver patient reminder & routine manager
+│   │   │   ├── CaregiverNotifications.tsx # Caregiver inquiry response center
+│   │   │   └── UploadMedicine.tsx         # Prescription upload & OCR extraction
+│   │   ├── lib/               # Axios API client, assistant, reminders, and notifications services
+│   │   ├── types/             # TypeScript types
+│   │   └── data/              # Mock data & sample questions
 │   ├── package.json
 │   └── vite.config.ts
 └── README.md
@@ -96,14 +105,17 @@ Open your Supabase project dashboard, navigate to the **SQL Editor**, and run th
    );
    ```
 
-2. **Reminders Table:**
-   - Execute the SQL from [`backend/db/reminders_table.sql`](file:///c:/Users/parah/OneDrive/Desktop/Akhil/CogniCare/backend/db/reminders_table.sql).
+2. **Reminders & Routine Table:**
+   - Execute the SQL from [`backend/db/reminders_table.sql`](backend/db/reminders_table.sql).
 
 3. **AI Agent & Memory Tables:**
-   - Execute the SQL from [`backend/db/agent_tables.sql`](file:///c:/Users/parah/OneDrive/Desktop/Akhil/CogniCare/backend/db/agent_tables.sql).
+   - Execute the SQL from [`backend/db/agent_tables.sql`](backend/db/agent_tables.sql).
 
 4. **Notifications Table (CareTaker Escalation Flow):**
-   - Execute the SQL from [`backend/db/notifications_table.sql`](file:///c:/Users/parah/OneDrive/Desktop/Akhil/CogniCare/backend/db/notifications_table.sql).
+   - Execute the SQL from [`backend/db/notifications_table.sql`](backend/db/notifications_table.sql).
+
+5. **Medical Documents Table (OCR & Prescriptions):**
+   - Execute the SQL from [`backend/db/documents_table.sql`](backend/db/documents_table.sql).
 
 ---
 
@@ -204,17 +216,35 @@ You can use the following default test accounts or create your own:
 
 ## Key Features & User Flows
 
-### 1. AI Assistant & Memory Search
-- The patient can chat with CogniCare about medicines, upcoming appointments, reminders, and daily belongings (e.g., *"Where is my wallet?"*, *"Where are my glasses?"*).
-- CogniCare retrieves records from PostgreSQL and performs semantic similarity search over ChromaDB embeddings.
+### 1. Automatic Routine & Appointment Tracking (Conversation-to-Schedule)
+- When a patient asks about their routine or appointments (e.g., *"What's my appointment today?"*, *"What is my routine today?"*), CogniCare queries live database records and provides a grounded, gentle summary.
+- If the patient mentions, declares, or asks to save an appointment or day-to-day routine activity (e.g., *"I have a doctor appointment today at 3 PM with Dr. Smith"*, *"My routine is morning walk at 7:30 AM"*):
+  1. The AI Assistant automatically extracts the event title, category (`appointment`, `medicine`, `general`), date, and 24-hour timestamp.
+  2. The item is saved to the patient's routine schedule in PostgreSQL with automatic deduplication.
+  3. The chat UI renders a prominent **"Saved to Daily Routine"** visual confirmation card with an instant link to the routine manager.
 
-### 2. Missing Information Escalation to CareTaker
-- If the patient asks an informational question (e.g., *"Where is my wallet?"* or *"Do I have any appointment with doctor?"*) and the information is **not present in the database**, the AI assistant offers:
+### 2. Dedicated Daily Routine Manager (`/routine`)
+- An accessible, high-contrast interface designed specifically for elderly and MCI patients:
+  - **Date Selector:** Quickly switch between Today, Tomorrow, or pick any calendar date.
+  - **Category Tabs:** Filter between *All Items*, *Appointments 📅*, *Medicines 💊*, and *Daily Activities 🏃‍♂️*.
+  - **Interactive Checkboxes:** One-tap toggle to mark tasks completed or pending.
+  - **Add to Routine:** Manual modal allowing patients and caregivers to schedule activities anytime.
+  - **Dashboard Widget:** Live **Today's Routine & Appointments** card right on the Patient Dashboard (`/patientdashboard`) displaying today's progress.
+
+### 3. High-Speed Medicine OCR & Prescription Verification
+- Patients and Caregivers can upload photos of medicines, pill packaging, or prescription documents directly in the AI Assistant (`/assistant`) or Document Upload (`/upload`).
+- A local high-speed OCR pipeline extracts medication entities (name, dosage, frequency) in <300ms.
+- Extracted medications are compared against active prescriptions in the patient's medical records:
+  - **Verified:** Reassures the patient with dosage and instructions grounded in their doctor's prescription.
+  - **Unverified / Unknown:** Warns the patient and automatically prompts to escalate to their CareTaker for review.
+
+### 4. Missing Information Escalation to CareTaker
+- If the patient asks an informational question (e.g., *"Where is my wallet?"* or *"Where are my glasses?"*) and the information is **not present in the database**, the AI assistant offers:
   > *"I don't have that information in your records. Would you like me to ask your caretaker regarding this?"*
 - The patient can click the **[Yes, Ask Caretaker]** button or type *"yes"*.
 - The question is escalated to the CareTaker as a pending notification.
 
-### 3. CareTaker Response & Long-Term Memory Learning
+### 5. CareTaker Response & Long-Term Memory Learning
 - The CareTaker logs in and accesses the **Patient Inquiries** page (`/caregiver/notifications`).
 - The CareTaker sees the patient's question and submits an answer (e.g., *"Your wallet is on the dining table next to the keys."*).
 - **As soon as the CareTaker responds:**
@@ -226,11 +256,16 @@ You can use the following default test accounts or create your own:
 
 ## Running Automated Tests
 
-Run backend unit and integration tests using pytest:
+Run the full backend test suite using pytest:
 
 ```bash
 cd backend
-.\venv\Scripts\activate      # Windows
+.\venv\Scripts\activate      # Windows (or source venv/bin/activate on Unix)
 pytest
 ```
-All 13 tests verify tool routing, missing info detection, affirmation detection, API escalation, and memory persistence.
+
+All 22 unit and integration tests verify:
+- Agent planning, small-talk handling, and grounded template fallback
+- Routine & appointment extraction, tool routing, and deduplication
+- Caregiver notification escalation, affirmative intent parsing, and memory persistence
+- Local document OCR extraction and medical record cross-referencing

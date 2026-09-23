@@ -29,8 +29,10 @@ Available backend tools (you can request any subset, or NONE for pure chit-chat)
 - get_today_medicines: today's medicine reminders.
 - get_upcoming_appointments: future appointment reminders.
 - get_patient_reminders: general reminders, optionally filtered by date.
+- get_patient_routine: all scheduled medicines, appointments, and daily activities for today or a specific date.
 - search_patient_memories: semantic search over the patient's long-term memories.
 - search_patient_documents: search the patient's documents.
+- save_to_routine: save an appointment, medicine, or day-to-day routine activity (doctor visit, dentist, walk, exercise, pills) to the patient's routine.
 - create_reminder: create a reminder when the patient explicitly asks to be reminded.
 """
 
@@ -41,18 +43,22 @@ Recent chat:
 Patient message: {message}
 Today's date: {today}
 Return ONLY JSON like:
-{{"tools": ["get_today_medicines"], "reminders_date": "2026-09-19 or null", "memory_query": "query string or null", "create_reminder": null}}
+{{"tools": ["get_upcoming_appointments"], "reminders_date": "{today}", "memory_query": null, "save_to_routine": null}}
 Rules:
-- For greetings, small talk, feelings, general knowledge, stories, jokes, or emotional support → return {{"tools": [], "reminders_date": null, "memory_query": null, "create_reminder": null}}. Chat normally, no records needed.
+- For greetings, small talk, feelings, general knowledge, stories, jokes, or emotional support → return {{"tools": [], "reminders_date": null, "memory_query": null, "save_to_routine": null}}. Chat normally, no records needed.
 - For medicines/appointments/reminders/documents questions → pick only the relevant tools.
+- For daily routine, schedule, or day-to-day activities questions ("what's my appointment today", "what is my routine today", "what do I do today") → pick relevant tools (e.g. ["get_upcoming_appointments", "get_patient_routine", "get_today_medicines"]).
 - For personal belongings (wallet, keys, glasses, items, where is...), people, past discussions, or memories → pick ["search_patient_memories"] with memory_query set to the item or topic.
-- Set create_reminder ONLY when the patient explicitly asks to be reminded (e.g. "remind me to..."). Otherwise null.
+- ROUTINE & APPOINTMENT SAVING: When the patient states, mentions, or asks to save an appointment (e.g. "what's my appointment today? It's Dr. Smith at 3pm", "I have a doctor appointment today at 4pm", "dentist tomorrow at 10am") or a day-to-day routine activity (e.g. "morning walk at 7am", "take medicine at 8pm", "remind me to..."), set save_to_routine:
+  {{"title": "Appointment with Dr. Smith", "type": "appointment"|"medicine"|"general", "reminder_date": "YYYY-MM-DD", "reminder_time": "HH:MM", "dosage": null, "notes": "..."}}
 Examples:
-- "Hello, how are you?" → {{"tools": [], "reminders_date": null, "memory_query": null, "create_reminder": null}}
-- "Where is my wallet?" → {{"tools": ["search_patient_memories"], "reminders_date": null, "memory_query": "wallet", "create_reminder": null}}
-- "Do I have any appointment with doctor?" → {{"tools": ["get_upcoming_appointments"], "reminders_date": null, "memory_query": null, "create_reminder": null}}
-- "What medicine do I take tonight?" → {{"tools": ["get_today_medicines"], "reminders_date": null, "memory_query": null, "create_reminder": null}}
-- "Who is Emily?" → {{"tools": ["search_patient_memories"], "reminders_date": null, "memory_query": "Who is Emily?", "create_reminder": null}}
+- "Hello, how are you?" → {{"tools": [], "reminders_date": null, "memory_query": null, "save_to_routine": null}}
+- "Where is my wallet?" → {{"tools": ["search_patient_memories"], "reminders_date": null, "memory_query": "wallet", "save_to_routine": null}}
+- "What's my appointment today?" → {{"tools": ["get_upcoming_appointments", "get_patient_routine"], "reminders_date": "{today}", "memory_query": null, "save_to_routine": null}}
+- "What's my routine today?" → {{"tools": ["get_patient_routine", "get_today_medicines"], "reminders_date": "{today}", "memory_query": null, "save_to_routine": null}}
+- "I have a doctor appointment today at 3pm with Dr. Smith" → {{"tools": ["get_upcoming_appointments"], "reminders_date": "{today}", "memory_query": null, "save_to_routine": {{"title": "Appointment with Dr. Smith", "type": "appointment", "reminder_date": "{today}", "reminder_time": "15:00", "dosage": null, "notes": "Doctor appointment"}}}}
+- "What medicine do I take tonight?" → {{"tools": ["get_today_medicines"], "reminders_date": null, "memory_query": null, "save_to_routine": null}}
+- "Who is Emily?" → {{"tools": ["search_patient_memories"], "reminders_date": null, "memory_query": "Who is Emily?", "save_to_routine": null}}
 JSON:"""
 
 ANSWER_PROMPT = """{system}
@@ -63,12 +69,12 @@ Recent chat:
 Patient: {message}
 How to answer:
 - If this is normal conversation (greeting, feelings, stories, general knowledge): reply naturally like a caring friend. Do NOT mention records or say "no records".
-- If this is about the patient's own medicines, appointments, reminders, documents, personal belongings (wallet, keys, glasses), or medical situation:
+- If this is about the patient's own medicines, appointments, routine, reminders, documents, personal belongings (wallet, keys, glasses), or medical situation:
   - Answer gently and accurately from the records above.
   - IMPORTANT: If records are empty or do not contain the answer, say honestly that you don't have that information in their records, and ask: "I don't have that information in your records. Would you like me to ask your caretaker regarding this?" (or similar warm phrasing). Never fabricate details.
 - If the patient is confirming or saying yes to your previous offer to ask their caretaker:
   - Confirm warmly that you have sent a notification to their caretaker and will let them know as soon as the caretaker responds.
-- If a reminder was just created, confirm its title, date and time.
+- If an appointment, routine activity, or reminder was just saved, warmly confirm its title, date and time, and reassure the patient that it is now saved in their daily routine schedule.
 Assistant:"""
 
 SUMMARY_PROMPT = """Summarize today's AI activity for a caregiver in 2-4 short lines plus key events.
@@ -160,6 +166,15 @@ def _format_reminders(rows) -> str:
     )
 
 
+def _format_routine(rows) -> str:
+    if not rows:
+        return "No routine items scheduled for today in your records."
+    return "Today's daily routine: " + "; ".join(
+        f"{r.get('title')} ({r.get('type')}) at {str(r.get('reminder_time'))[:5]}"
+        + (" [completed]" if r.get("is_done") else "") for r in rows
+    )
+
+
 def _format_memories(rows) -> str:
     if not rows:
         return "No relevant long-term memories found."
@@ -232,7 +247,7 @@ def _llm_plan(message: str, history: list) -> dict:
     plan = _parse_json(getattr(resp, "content", "") or "")
     raw_tools = plan.get("tools") or []
     allowed = {"get_today_medicines", "get_upcoming_appointments", "get_patient_reminders",
-               "search_patient_memories", "search_patient_documents"}
+               "get_patient_routine", "search_patient_memories", "search_patient_documents"}
     tools = [t for t in raw_tools if t in allowed][:4]
     plan["tools"] = tools
     return plan
@@ -338,6 +353,111 @@ def _is_negation(msg: str) -> bool:
     if len(words) <= 3 and words and words[0] in ("no", "nope", "nah"):
         return True
     return False
+
+
+def extract_routine_or_appointment(message: str, today_str: str) -> dict | None:
+    """Extracts routine/appointment items from patient messages when the patient
+    mentions or declares an appointment, medicine, or daily activity with a time or details."""
+    import re
+    from datetime import timedelta
+
+    text = (message or "").strip()
+    t = text.lower()
+
+    # If it's a pure inquiry with no specifics, don't create an item
+    # e.g., "what's my appointment today?", "do i have any appointments?", "what is my routine?"
+    inquiry_only_patterns = [
+        r"^(what|do|when|is there|any|show|tell)\b.*(appointment|routine|schedule)\b.*\?*$",
+        r"^what('s| is) my (appointment|routine|schedule) today\??$",
+        r"^do i have (an|any) appointment\??$",
+    ]
+    for pat in inquiry_only_patterns:
+        if re.match(pat, t.strip()):
+            if not re.search(r"\b(\d{1,2}(?::\d{2})?\s*(?:am|pm)|\d{1,2}\s*o'?clock)\b", t) and not re.search(r"\b(dr\.|doctor\s+[a-z]+)\b", t):
+                return None
+
+    is_appointment = bool(re.search(r"\b(appointment|doctor|dr\.|clinic|dentist|hospital|checkup|cardiologist|physician|consultation|visit)\b", t))
+    is_medicine = bool(re.search(r"\b(medicine|tablet|pill|dose|dosage|capsule|syrup|drops|medication)\b", t))
+    is_routine_activity = bool(re.search(r"\b(routine|walk|exercise|yoga|breakfast|lunch|dinner|hydration|water|nap|sleep|read|therapy)\b", t))
+
+    if not (is_appointment or is_medicine or is_routine_activity):
+        return None
+
+    # Determine date
+    target_date = today_str
+    if "tomorrow" in t:
+        try:
+            d = datetime.fromisoformat(today_str) + timedelta(days=1)
+            target_date = d.date().isoformat()
+        except Exception:
+            pass
+
+    # Extract time
+    target_time = "10:00"
+    time_match = re.search(r"\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b", t)
+    if time_match:
+        hr = int(time_match.group(1))
+        mn = int(time_match.group(2) or 0)
+        ampm = time_match.group(3).lower()
+        if ampm == "pm" and hr < 12:
+            hr += 12
+        elif ampm == "am" and hr == 12:
+            hr = 0
+        target_time = f"{hr:02d}:{mn:02d}"
+    else:
+        time_at_match = re.search(r"\bat\s+(\d{1,2})(?::(\d{2}))?\b", t)
+        if time_at_match:
+            hr = int(time_at_match.group(1))
+            mn = int(time_at_match.group(2) or 0)
+            if hr <= 12 and any(w in t for w in ("evening", "afternoon", "night")):
+                if hr < 12:
+                    hr += 12
+            target_time = f"{hr:02d}:{mn:02d}"
+        elif "morning" in t:
+            target_time = "08:00"
+        elif "afternoon" in t:
+            target_time = "14:00"
+        elif "evening" in t:
+            target_time = "18:00"
+        elif "night" in t:
+            target_time = "20:00"
+
+    # Determine type and title
+    if is_appointment:
+        rtype = "appointment"
+        doc_match = re.search(r"\bdr\.\s*([a-zA-Z]+)", text, re.I)
+        if not doc_match:
+            doc_match = re.search(r"\bdoctor\s+(?!appointment|visit|checkup|clinic|office|hospital)([a-zA-Z]+)", text, re.I)
+        if doc_match:
+            doc_name = doc_match.group(1).capitalize()
+            title = f"Appointment with Dr. {doc_name}"
+        elif "dentist" in t:
+            title = "Dentist Appointment"
+        elif "eye" in t:
+            title = "Eye Clinic Checkup"
+        else:
+            title = "Doctor Appointment"
+    elif is_medicine:
+        rtype = "medicine"
+        title = f"Take Medicine ({time_match.group(0) if time_match else 'Scheduled'})"
+    else:
+        rtype = "general"
+        if "walk" in t:
+            title = "Morning Walk" if "morning" in t else ("Evening Walk" if "evening" in t else "Daily Walk")
+        elif "yoga" in t:
+            title = "Yoga Session"
+        elif "exercise" in t:
+            title = "Daily Exercise"
+        else:
+            title = "Daily Routine Activity"
+
+    return {
+        "title": title,
+        "type": rtype,
+        "reminder_date": target_date,
+        "reminder_time": target_time,
+        "notes": f"Saved from patient message: '{text[:100]}'",
+    }
 
 
 def _find_pending_escalation(history: list) -> tuple[bool, str]:
@@ -447,6 +567,9 @@ class AgentOrchestrator:
                 elif name == "get_patient_reminders":
                     ctx["reminders"] = tools_impl.get_patient_reminders(
                         patient_id, plan.get("reminders_date") or None)
+                elif name == "get_patient_routine":
+                    ctx["routine"] = tools_impl.get_patient_routine(
+                        patient_id, plan.get("reminders_date") or None)
                 elif name == "search_patient_documents":
                     ctx["documents"] = tools_impl.search_patient_documents(patient_id, message)
                 elif name == "search_patient_memories":
@@ -457,23 +580,36 @@ class AgentOrchestrator:
                 tools_used.append({"tool_name": name, "success": False, "detail": str(e)[:200]})
 
         created_row = None
-        reminder_req = plan.get("create_reminder")
-        if isinstance(reminder_req, dict) and reminder_req.get("title"):
+        routine_req = plan.get("save_to_routine") or plan.get("create_reminder")
+        if not routine_req or not isinstance(routine_req, dict) or not routine_req.get("title"):
+            extracted = extract_routine_or_appointment(message, date.today().isoformat())
+            if extracted:
+                routine_req = extracted
+
+        if isinstance(routine_req, dict) and routine_req.get("title"):
             try:
-                created_row = tools_impl.create_reminder(patient_id, {
-                    "title": str(reminder_req["title"]).strip()[:200],
-                    "type": reminder_req.get("type") or "general",
-                    "reminder_date": reminder_req.get("reminder_date") or date.today().isoformat(),
-                    "reminder_time": reminder_req.get("reminder_time") or "10:00",
-                    "dosage": reminder_req.get("dosage"),
-                    "notes": reminder_req.get("notes") or "Created by AI assistant",
+                created_row = tools_impl.save_to_routine(patient_id, {
+                    "title": str(routine_req["title"]).strip()[:200],
+                    "type": routine_req.get("type") or "general",
+                    "reminder_date": routine_req.get("reminder_date") or date.today().isoformat(),
+                    "reminder_time": routine_req.get("reminder_time") or "10:00",
+                    "dosage": routine_req.get("dosage"),
+                    "notes": routine_req.get("notes") or "Saved to daily routine via CogniCare Assistant",
                 })
-                tools_used.append({"tool_name": "create_reminder", "success": True})
-                ctx.setdefault("reminders", []).append(created_row)
+                tools_used.append({"tool_name": "save_to_routine", "success": True})
+                ctx.setdefault("routine", []).append(created_row)
+                if created_row.get("type") == "appointment":
+                    ctx.setdefault("appointments", []).append(created_row)
+                elif created_row.get("type") == "medicine":
+                    ctx.setdefault("medicines", []).append(created_row)
+                else:
+                    ctx.setdefault("reminders", []).append(created_row)
             except Exception as e:
-                tools_used.append({"tool_name": "create_reminder", "success": False, "detail": str(e)[:200]})
+                tools_used.append({"tool_name": "save_to_routine", "success": False, "detail": str(e)[:200]})
 
         context_parts = []
+        if "routine" in ctx:
+            context_parts.append(_format_routine(ctx.get("routine", [])))
         if "medicines" in ctx:
             context_parts.append(_format_medicines(ctx.get("medicines", [])))
         if "appointments" in ctx:
@@ -498,7 +634,9 @@ class AgentOrchestrator:
             rate_limited = True
             answer = _template_answer(message, ctx)
         if created_row is not None:
-            answer += f" I've created the reminder '{created_row['title']}' for {created_row['reminder_date']} at {str(created_row['reminder_time'])[:5]}."
+            r_type = created_row.get("type", "general")
+            type_label = "appointment" if r_type == "appointment" else ("medicine" if r_type == "medicine" else "routine task")
+            answer += f" I've saved the {type_label} '{created_row['title']}' for {created_row['reminder_date']} at {str(created_row['reminder_time'])[:5]} to your daily routine."
 
         should_suggest_escalation = (
             "ask your caretaker" in answer.lower()
@@ -550,6 +688,8 @@ class AgentOrchestrator:
         mem_result: dict = {"created": False, "deferred": True}
 
         sources = []
+        if ctx.get("routine"):
+            sources.append("Daily routine")
         if ctx.get("medicines"):
             sources.append("Medicine schedule")
         if ctx.get("appointments"):
@@ -571,6 +711,7 @@ class AgentOrchestrator:
             "tools_used": [t["tool_name"] for t in tools_used],
             "sources": sources,
             "memory": mem_result,
+            "routine_saved": created_row,
             "suggest_caretaker_escalation": should_suggest_escalation,
             "escalation_question": message if should_suggest_escalation else None,
             "disclaimer": DISCLAIMER,
@@ -603,8 +744,10 @@ def _route_tools(message: str) -> list[str]:
     tools: list[str] = []
     if any(k in t for k in ("medicine", "tablet", "pill", "dose", "tonight", "prescription")):
         tools.append("get_today_medicines")
-    if any(k in t for k in ("appointment", "doctor", "dr.", "clinic")):
+    if any(k in t for k in ("appointment", "doctor", "dr.", "clinic", "dentist", "hospital")):
         tools.append("get_upcoming_appointments")
+    if any(k in t for k in ("routine", "schedule", "daily routine", "plan for today", "day to day", "activities", "tasks", "walk", "exercise")):
+        tools.append("get_patient_routine")
     if any(k in t for k in ("remind", "reminder", "tomorrow")):
         tools.append("get_patient_reminders")
     if any(k in t for k in ("report", "document", "prescription says")):
@@ -623,12 +766,22 @@ def _template_answer(message: str, ctx: dict) -> str:
     if _is_small_talk(message):
         return "Hello! It's good to see you. How are you feeling today?"
     t = message.lower()
+    if any(k in t for k in ("routine", "schedule", "plan for today", "day to day", "what do i have today")):
+        routine = ctx.get("routine") or ctx.get("reminders") or []
+        appts = ctx.get("appointments") or []
+        meds = ctx.get("medicines") or []
+        all_items = routine or (appts + meds)
+        if not all_items:
+            return "You don't have any items scheduled in your routine for today. If you'd like me to add an appointment or daily activity, just tell me what and when!"
+        return "Here is your routine for today: " + "; ".join(
+            f"{i.get('title')} at {str(i.get('reminder_time'))[:5]}" for i in all_items
+        ) + "."
     if "medicine" in t or "pill" in t or "tablet" in t or "dose" in t or "tonight" in t:
         meds = ctx.get("medicines", [])
         if not meds:
             return "I don't have that medicine scheduled in your records. Would you like me to ask your caretaker regarding this?"
         return "Your records show: " + "; ".join(f"{m.get('title')} at {str(m.get('reminder_time'))[:5]}" for m in meds) + "."
-    if "appointment" in t or "doctor" in t or "dr." in t or "clinic" in t:
+    if "appointment" in t or "doctor" in t or "dr." in t or "clinic" in t or "dentist" in t:
         appts = ctx.get("appointments", [])
         if not appts:
             return "I don't see any upcoming doctor appointments in your records. Would you like me to ask your caretaker regarding this?"

@@ -18,6 +18,8 @@ export interface DetectedMedicineInfo {
   suggest_caretaker_escalation?: boolean;
 }
 
+import type { Reminder } from "@/types";
+
 export interface AssistantChatResponse {
   conversation_id: string;
   response: string;
@@ -29,6 +31,7 @@ export interface AssistantChatResponse {
   suggest_caretaker_escalation?: boolean;
   escalation_question?: string | null;
   notification_created?: unknown;
+  routine_saved?: Reminder | null;
   detected_medicine?: DetectedMedicineInfo;
   ocr_summary?: string;
   ocr_duration_ms?: number;

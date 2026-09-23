@@ -30,6 +30,8 @@ TOOL_LABELS = {
     "get_today_medicines": "Checked medicine schedule",
     "get_upcoming_appointments": "Checked appointments",
     "get_patient_reminders": "Checked reminders",
+    "get_patient_routine": "Checked daily routine",
+    "save_to_routine": "Saved to daily routine",
     "search_patient_memories": "Searched long-term memories",
     "search_patient_documents": "Searched documents",
     "create_reminder": "Created a reminder",

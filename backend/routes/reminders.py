@@ -101,16 +101,27 @@ def _validate_type(t: str):
 
 @reminders_router.post("/")
 def create_reminder(data: CreateReminderRequest, request: Request):
-    payload = _payload(request, ("CareTaker",))
+    payload = _payload(request, ("CareTaker", "Patient"))
+    role = payload.get("role")
     _validate_type(data.type)
-    _ensure_caretaker_owns_patient(payload["sub"], data.patient_id)
+
+    if role == "CareTaker":
+        _ensure_caretaker_owns_patient(payload["sub"], data.patient_id)
+        caretaker_id = payload["sub"]
+    else:
+        if payload["sub"] != data.patient_id:
+            raise HTTPException(status_code=403, detail="Not authorized to create reminders for another patient")
+        p_res = supabase.table("patients").select("caretaker_id").eq("id", data.patient_id).execute()
+        if not p_res.data:
+            raise HTTPException(status_code=404, detail="Patient not found")
+        caretaker_id = p_res.data[0].get("caretaker_id")
 
     now = datetime.now(timezone.utc).isoformat()
     reminder_id = uuid.uuid4().hex
     row = {
         "id": reminder_id,
         "patient_id": data.patient_id,
-        "caretaker_id": payload["sub"],
+        "caretaker_id": caretaker_id,
         "title": data.title.strip(),
         "type": data.type,
         "dosage": data.dosage,
@@ -307,13 +318,18 @@ def update_reminder(reminder_id: str, data: UpdateReminderRequest, request: Requ
 
 @reminders_router.delete("/{reminder_id}")
 def delete_reminder(reminder_id: str, request: Request):
-    payload = _payload(request, ("CareTaker",))
+    payload = _payload(request, ("CareTaker", "Patient"))
+    role = payload.get("role")
     existing = supabase.table("reminders").select("*").eq("id", reminder_id).execute()
     if not existing.data:
         raise HTTPException(status_code=404, detail="Reminder not found")
     reminder = existing.data[0]
-    if reminder["caretaker_id"] != payload["sub"]:
-        raise HTTPException(status_code=403, detail="Not authorized")
+    if role == "CareTaker":
+        if reminder["caretaker_id"] != payload["sub"]:
+            raise HTTPException(status_code=403, detail="Not authorized")
+    else:
+        if reminder["patient_id"] != payload["sub"]:
+            raise HTTPException(status_code=403, detail="Not authorized")
     if reminder.get("is_done"):
         raise HTTPException(status_code=400, detail="Completed reminders cannot be deleted")
     supabase.table("reminders").delete().eq("id", reminder_id).execute()

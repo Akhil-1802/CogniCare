@@ -13,6 +13,7 @@ import CareTakerDashboard from "./pages/CareGiverDashboard";
 import MyPatients from "./pages/MyPatients";
 import CaretakerAiActivity from "./pages/CaretakerAiActivity";
 import CaregiverNotifications from "./pages/CaregiverNotifications";
+import PatientRoutine from "./pages/PatientRoutine";
 import Auth from "./pages/Auth";
 import Home from "./pages/Home";
 
@@ -38,6 +39,14 @@ function App() {
         element={
           <AppLayout>
             <Dashboard />
+          </AppLayout>
+        }
+      />
+      <Route
+        path="/routine"
+        element={
+          <AppLayout>
+            <PatientRoutine />
           </AppLayout>
         }
       />
