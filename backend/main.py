@@ -6,6 +6,7 @@ from routes.reminders import reminders_router
 from routes.assistant import assistant_router
 from routes.caretaker_ai import caretaker_ai_router
 from routes.notifications import notifications_router
+from routes.documents import documents_router
 
 app = FastAPI()
 
@@ -23,6 +24,7 @@ app.include_router(reminders_router)
 app.include_router(assistant_router)
 app.include_router(caretaker_ai_router)
 app.include_router(notifications_router)
+app.include_router(documents_router)
 
 
 @app.get("/")

@@ -11,6 +11,7 @@ import {
   X,
   HeartPulse,
   Sparkles,
+  Upload,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
@@ -20,6 +21,7 @@ import { getNotificationCounts } from "@/lib/notifications";
 const navItems = [
   { path: "/caregiverdashboard", label: "Dashboard", icon: LayoutDashboard },
   { path: "/caregiver/patients", label: "My Patients", icon: Users },
+  { path: "/caregiver/upload-records", label: "Upload Records", icon: Upload },
   { path: "/caregiver/reminders", label: "Reminders", icon: CalendarPlus },
   { path: "/caregiver/ai-activity", label: "AI Activity", icon: Sparkles },
   { path: "/caregiver/notifications", label: "Notifications", icon: Bell },

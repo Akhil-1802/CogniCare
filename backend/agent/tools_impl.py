@@ -94,12 +94,38 @@ def get_memory(patient_id: str, memory_id: str):
     return row
 
 
-def search_patient_documents(patient_id: str, query: str):
-    """No documents table exists yet — return empty, never hallucinate."""
-    return []
+def search_patient_documents(patient_id: str, query: str, limit: int = 5):
+    """Searches patient uploaded medical documents and prescriptions."""
+    from services.medical_record_service import get_patient_documents
+
+    docs = get_patient_documents(patient_id, limit=20)
+    if not docs:
+        return []
+
+    q = (query or "").lower().strip()
+    if not q:
+        return docs[:limit]
+
+    keywords = [w for w in q.split() if len(w) > 2]
+    matched = []
+    for doc in docs:
+        text_blob = (
+            f"{doc.get('title', '')} {doc.get('raw_ocr_text', '')} "
+            f"{str(doc.get('structured_data', ''))}"
+        ).lower()
+        if any(k in text_blob for k in keywords):
+            matched.append(doc)
+
+    return matched[:limit] if matched else docs[:2]
 
 
 def get_document_details(patient_id: str, document_id: str):
+    from services.medical_record_service import get_patient_documents
+
+    docs = get_patient_documents(patient_id, limit=50)
+    for doc in docs:
+        if doc.get("id") == document_id:
+            return doc
     return None
 
 

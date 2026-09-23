@@ -141,7 +141,12 @@ def get_patient_notifications(request: Request, limit: int = Query(default=30, l
             .execute()
         )
         if res.data is not None:
-            return res.data
+            rows = list(res.data)
+            existing_ids = {r["id"] for r in rows}
+            for n in _LOCAL_NOTIFICATIONS:
+                if n.get("patient_id") == patient_id and n["id"] not in existing_ids:
+                    rows.append(n)
+            return rows[:limit]
     except Exception as e:
         logger.warning("Supabase select failed for notifications (%s), using local fallback", e)
 
@@ -171,7 +176,12 @@ def get_caretaker_notifications(request: Request, limit: int = Query(default=30,
         )
         if res.data is not None:
             # Enrich with patient names if needed
-            rows = res.data
+            rows = list(res.data)
+            existing_ids = {r["id"] for r in rows}
+            for n in _LOCAL_NOTIFICATIONS:
+                if n.get("caretaker_id") == caretaker_id and n["id"] not in existing_ids:
+                    rows.append(n)
+
             p_ids = list({r["patient_id"] for r in rows if r.get("patient_id")})
             p_names = {}
             if p_ids:
@@ -183,7 +193,7 @@ def get_caretaker_notifications(request: Request, limit: int = Query(default=30,
             for r in rows:
                 if not r.get("metadata", {}).get("patient_name") and r.get("patient_id") in p_names:
                     r.setdefault("metadata", {})["patient_name"] = p_names[r["patient_id"]]
-            return rows
+            return rows[:limit]
     except Exception as e:
         logger.warning("Supabase select failed for notifications (%s), using local fallback", e)
 

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Request, HTTPException, Query
+from fastapi import APIRouter, Request, HTTPException, Query, UploadFile, File, Form
 from pydantic import BaseModel
 from typing import Optional
 import logging
@@ -8,6 +8,8 @@ from agent.authz import get_auth_payload, authenticated_patient_id
 from agent.orchestrator import orchestrator
 from agent.tools_impl import search_patient_memories
 from agent.cleanup import delete_expired_conversations
+from services.ocr_service import process_document_ocr
+from services.medical_record_service import extract_medical_data_from_ocr, compare_medicine_with_records
 
 logger = logging.getLogger("cognicare.assistant")
 
@@ -49,6 +51,83 @@ def chat(data: ChatRequest, request: Request):
     except Exception as e:
         logger.error("Assistant chat failed (%s): %s\n%s", type(e).__name__, e, traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"{type(e).__name__}: {e}")
+
+
+@assistant_router.post("/chat-with-file")
+async def chat_with_file(
+    file: UploadFile = File(...),
+    message: Optional[str] = Form(None),
+    conversation_id: Optional[str] = Form(None),
+    request: Request = None,
+):
+    """Processes an uploaded medicine image or document, runs high-speed OCR,
+    extracts medication details, compares against patient medical records,
+    and returns an AI response grounded in the records (or offering Caretaker escalation).
+    """
+    payload = get_auth_payload(request)
+    patient_id = authenticated_patient_id(payload)
+
+    file_bytes = await file.read()
+    if not file_bytes:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty.")
+
+    # 1. High-speed local OCR (<300ms)
+    ocr_res = process_document_ocr(file_bytes, file.filename or "uploaded_medicine", file.content_type)
+    raw_ocr = ocr_res["text"]
+
+    # 2. Medical entity extraction
+    extracted = extract_medical_data_from_ocr(raw_ocr)
+    meds = extracted.get("medications", [])
+
+    # 3. Cross-reference against patient medical records
+    comp = compare_medicine_with_records(patient_id, meds, raw_ocr)
+
+    user_query = (message or "").strip() or "Should I take this medicine?"
+    med_name = comp.get("detected_name", "the scanned medicine")
+    med_dose = comp.get("detected_dosage", "")
+
+    # 4. Formulate contextual prompt for orchestrator
+    if comp["status"] == "VERIFIED":
+        context_prompt = (
+            f"[Patient uploaded medicine image/doc '{file.filename}']\n"
+            f"Patient asked: {user_query}\n"
+            f"OCR detected medicine: {med_name} {med_dose}.\n"
+            f"Medical record check: VERIFIED in patient's records ({comp['matched_record'].get('name')}).\n"
+            f"Record details: {comp['matched_record'].get('content')}.\n"
+            f"Please verify this warmly for the patient, confirm that it matches their prescribed medical records, and mention any instructions."
+        )
+    else:
+        known_str = ", ".join(comp.get("all_active_prescriptions", [])) or "No active prescriptions on file"
+        context_prompt = (
+            f"[Patient uploaded medicine image/doc '{file.filename}']\n"
+            f"Patient asked: {user_query}\n"
+            f"OCR detected text/medicine: '{med_name}' (dosage: {med_dose or 'not specified'}).\n"
+            f"Medical record check: NOT FOUND in active medical records or prescriptions.\n"
+            f"Patient's known active prescriptions on file: {known_str}.\n"
+            f"CRITICAL: Inform the patient gently and clearly that '{med_name}' is NOT in their prescribed medical records, "
+            f"advise them NOT to take it without confirmation, and ask if they would like you to notify their caretaker regarding it."
+        )
+
+    try:
+        chat_resp = orchestrator.chat(patient_id, context_prompt, conversation_id)
+        # Augment chat response with OCR and match metadata
+        chat_resp["detected_medicine"] = comp
+        chat_resp["ocr_summary"] = raw_ocr[:200]
+        chat_resp["ocr_duration_ms"] = ocr_res["duration_ms"]
+        chat_resp["file_name"] = file.filename
+        if comp["status"] != "VERIFIED":
+            chat_resp["suggest_caretaker_escalation"] = True
+            chat_resp["escalation_question"] = f"Can I take {med_name}? (Not found in my medical records)"
+
+        return chat_resp
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except RuntimeError as e:
+        logger.error("Assistant chat-with-file failed (RuntimeError): %s\n%s", e, traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as e:
+        logger.error("Assistant chat-with-file failed: %s\n%s", e, traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @assistant_router.post("/escalate")

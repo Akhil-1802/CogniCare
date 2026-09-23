@@ -1,5 +1,23 @@
 import api from "./api";
 
+export interface DetectedMedicineInfo {
+  status: "VERIFIED" | "NOT_FOUND" | "MULTIPLE";
+  found: boolean;
+  detected_name: string;
+  detected_dosage?: string;
+  timing?: string;
+  frequency?: string;
+  advisory?: string;
+  matched_record?: {
+    source?: string;
+    name?: string;
+    content?: string;
+    document_title?: string;
+  } | null;
+  all_active_prescriptions?: string[];
+  suggest_caretaker_escalation?: boolean;
+}
+
 export interface AssistantChatResponse {
   conversation_id: string;
   response: string;
@@ -11,6 +29,10 @@ export interface AssistantChatResponse {
   suggest_caretaker_escalation?: boolean;
   escalation_question?: string | null;
   notification_created?: unknown;
+  detected_medicine?: DetectedMedicineInfo;
+  ocr_summary?: string;
+  ocr_duration_ms?: number;
+  file_name?: string;
 }
 
 export interface ConversationItem {
@@ -32,6 +54,22 @@ export async function postAssistantChat(message: string, conversationId?: string
   const res = await api.post<AssistantChatResponse>("/assistant/chat", {
     message,
     conversation_id: conversationId || null,
+  });
+  return res.data;
+}
+
+export async function postAssistantChatWithFile(
+  file: File,
+  message?: string,
+  conversationId?: string | null
+) {
+  const formData = new FormData();
+  formData.append("file", file);
+  if (message) formData.append("message", message);
+  if (conversationId) formData.append("conversation_id", conversationId);
+
+  const res = await api.post<AssistantChatResponse>("/assistant/chat-with-file", formData, {
+    headers: { "Content-Type": "multipart/form-data" },
   });
   return res.data;
 }

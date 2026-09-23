@@ -168,6 +168,23 @@ def _format_memories(rows) -> str:
     )
 
 
+def _format_documents(rows) -> str:
+    if not rows:
+        return "No relevant medical documents or prescriptions found."
+    items = []
+    for r in rows[:4]:
+        struct = r.get("structured_data") or {}
+        meds = struct.get("medications", [])
+        med_summary = ", ".join([f"{m.get('name')} ({m.get('dosage','')}, {m.get('frequency','')})" for m in meds[:5]]) if meds else ""
+        text = f"Document '{r.get('title', 'Prescription')}': {struct.get('summary', '')}"
+        if med_summary:
+            text += f". Prescribed medicines: {med_summary}"
+        if struct.get("doctor_notes"):
+            text += f". Notes: {struct.get('doctor_notes')}"
+        items.append(text)
+    return "Medical documents & prescriptions: " + " | ".join(items)
+
+
 def _parse_json(text: str) -> dict:
     start, end = text.find("{"), text.rfind("}")
     if start == -1 or end == -1:
@@ -466,11 +483,7 @@ class AgentOrchestrator:
         if "memories" in ctx:
             context_parts.append(_format_memories(ctx.get("memories", [])))
         if "documents" in ctx:
-            docs = ctx.get("documents", [])
-            context_parts.append(
-                "No relevant documents found." if not docs
-                else f"Found {len(docs)} relevant document(s) in records."
-            )
+            context_parts.append(_format_documents(ctx.get("documents", [])))
         context_text = "\n".join(context_parts) if context_parts else "(No records lookup needed for this message — reply as a natural conversational companion.)"
         try:
             answer = _llm_answer(SYSTEM_PROMPT, context_text, history, message)

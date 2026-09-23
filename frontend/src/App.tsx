@@ -116,6 +116,14 @@ function App() {
         }
       />
       <Route
+        path="/caregiver/upload-records"
+        element={
+          <CareTakerLayout>
+            <UploadMedicine />
+          </CareTakerLayout>
+        }
+      />
+      <Route
         path="/caregiver/reminders"
         element={
           <CareTakerLayout>

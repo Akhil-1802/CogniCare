@@ -223,6 +223,13 @@ export default function CareTakerDashboard() {
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {[
             {
+              title: "Upload Records & OCR",
+              description: "Prescriptions & medicine images",
+              icon: Upload,
+              path: "/caregiver/upload-records",
+              color: "from-emerald-500 to-teal-600",
+            },
+            {
               title: "Add Reminder",
               description: "Medicine & appointments",
               icon: CalendarPlus,
