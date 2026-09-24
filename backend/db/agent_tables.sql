@@ -35,15 +35,33 @@ CREATE TABLE IF NOT EXISTS memories (
   importance TEXT NOT NULL DEFAULT 'MEDIUM'
     CHECK (importance IN ('LOW','MEDIUM','HIGH')),
   confidence DOUBLE PRECISION NOT NULL DEFAULT 0.5 CHECK (confidence >= 0 AND confidence <= 1),
+  importance_score DOUBLE PRECISION NOT NULL DEFAULT 0,
+  confidence_score DOUBLE PRECISION NOT NULL DEFAULT 0,
+  usefulness_score DOUBLE PRECISION NOT NULL DEFAULT 0,
+  persistence_score DOUBLE PRECISION NOT NULL DEFAULT 0,
+  novelty_score DOUBLE PRECISION NOT NULL DEFAULT 0,
+  total_score DOUBLE PRECISION NOT NULL DEFAULT 0,
+  retention_days INTEGER NOT NULL DEFAULT 30,
+  retention_policy TEXT NOT NULL DEFAULT 'STANDARD_MEMORY',
+  last_confirmed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  expires_at TIMESTAMPTZ,
   source_type TEXT,
   source_id TEXT,
+  source_message_id TEXT,
   status TEXT NOT NULL DEFAULT 'ACTIVE'
-    CHECK (status IN ('ACTIVE','PENDING_VALIDATION','REJECTED','ARCHIVED')),
+    CHECK (status IN ('ACTIVE','PENDING_VALIDATION','REJECTED','ARCHIVED','EXPIRED')),
+  metadata JSONB NOT NULL DEFAULT '{}',
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_memories_patient_type
   ON memories (patient_id, memory_type, status);
+CREATE INDEX IF NOT EXISTS idx_memories_patient_status_expires
+  ON memories (patient_id, status, expires_at);
+CREATE INDEX IF NOT EXISTS idx_memories_expires_at
+  ON memories (expires_at);
+CREATE INDEX IF NOT EXISTS idx_memories_created_at
+  ON memories (created_at DESC);
 
 CREATE TABLE IF NOT EXISTS daily_ai_summaries (
   id TEXT PRIMARY KEY,

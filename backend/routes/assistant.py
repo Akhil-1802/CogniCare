@@ -241,23 +241,21 @@ def get_conversation(conversation_id: str, request: Request):
 
 
 @assistant_router.get("/memories")
-def list_memories(request: Request, status: Optional[str] = None):
+def list_memories(request: Request, status: Optional[str] = "ACTIVE"):
+    from agent.memory_service import get_patient_memories
     payload = get_auth_payload(request)
     patient_id = authenticated_patient_id(payload)
-    q = supabase.table("memories").select("*").eq("patient_id", patient_id)
-    if status:
-        q = q.eq("status", status)
-    res = q.order("created_at", desc=True).limit(100).execute()
-    return res.data or []
+    return get_patient_memories(patient_id, status=status)
 
 
 @assistant_router.get("/memories/search")
-def search_memories(request: Request, q: str = Query(default="")):
+def search_memories(request: Request, q: str = Query(default=""), limit: int = Query(default=5, le=20)):
+    from agent.memory_service import search_verified_memories
     payload = get_auth_payload(request)
     patient_id = authenticated_patient_id(payload)
     if not q.strip():
         return []
-    return search_patient_memories(patient_id, q)
+    return search_verified_memories(patient_id, q, limit=limit)
 
 
 @assistant_router.get("/daily-summary")

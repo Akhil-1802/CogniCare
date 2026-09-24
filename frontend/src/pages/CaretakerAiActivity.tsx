@@ -157,13 +157,35 @@ export default function CaretakerAiActivity() {
               ) : (
                 <div className="mt-3 space-y-3">
                   {activity.pending_validation.map((m) => (
-                    <div key={m.id} className="rounded-xl border border-amber-200 bg-amber-50 p-3">
-                      <div className="flex items-center gap-2">
-                        <p className="font-medium text-slate-900">{m.title}</p>
-                        <Badge className="bg-amber-100 text-amber-700">{m.memory_type}</Badge>
+                    <div key={m.id} className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <p className="font-semibold text-slate-900">{m.title}</p>
+                          <Badge className="bg-amber-100 text-amber-800">{m.memory_type}</Badge>
+                        </div>
+                        <div className="flex items-center gap-1.5 text-xs font-medium">
+                          {m.total_score !== undefined && (
+                            <span className="rounded-md bg-white px-2 py-0.5 shadow-sm text-slate-700 border border-amber-200">
+                              Score: {Math.round(m.total_score)}/100
+                            </span>
+                          )}
+                          <span className="rounded-md bg-white px-2 py-0.5 shadow-sm text-slate-700 border border-amber-200">
+                            Confidence: {Math.round((m.confidence || 0) * 100)}%
+                          </span>
+                          {m.retention_days && (
+                            <span className="rounded-md bg-white px-2 py-0.5 shadow-sm text-slate-700 border border-amber-200">
+                              Retention: {m.retention_days}d
+                            </span>
+                          )}
+                        </div>
                       </div>
-                      <p className="mt-1 text-sm text-slate-600">{m.content}</p>
-                      <div className="mt-2 flex gap-2">
+                      <p className="mt-2 text-sm text-slate-700">{m.content}</p>
+                      {m.metadata?.reason && (
+                        <p className="mt-1 text-xs text-amber-800 italic bg-amber-100/60 p-1.5 rounded">
+                          Review note: {m.metadata.reason}
+                        </p>
+                      )}
+                      <div className="mt-3 flex gap-2">
                         <Button size="sm" variant="success" onClick={() => onValidate(m.id, "ACTIVE")}>
                           <CheckCircle2 className="h-3.5 w-3.5" /> Approve
                         </Button>

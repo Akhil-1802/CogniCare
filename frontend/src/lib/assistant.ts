@@ -110,7 +110,28 @@ export interface AiActivity {
   daily_summary: { summary: string; important_events: string[] } | null;
   recent_conversations: ConversationItem[];
   important_memories: { id: string; title: string; content: string }[];
-  pending_validation: { id: string; title: string; content: string; memory_type: string; confidence: number }[];
+  pending_validation: {
+    id: string;
+    title: string;
+    content: string;
+    memory_type: string;
+    confidence: number;
+    total_score?: number;
+    retention_days?: number;
+    retention_policy?: string;
+    metadata?: {
+      reason?: string;
+      conflict_with?: string;
+      score_breakdown?: {
+        importance?: number;
+        confidence?: number;
+        usefulness?: number;
+        persistence?: number;
+        novelty?: number;
+        total_score?: number;
+      };
+    };
+  }[];
 }
 
 export async function getAiActivity(patientId: string) {
@@ -118,7 +139,16 @@ export async function getAiActivity(patientId: string) {
   return res.data;
 }
 
-export async function validateMemory(memoryId: string, status: "ACTIVE" | "REJECTED") {
-  const res = await api.post(`/caretaker/memories/${memoryId}/validate`, { status });
+export async function validateMemory(
+  memoryId: string,
+  status: "ACTIVE" | "REJECTED",
+  editTitle?: string,
+  editContent?: string
+) {
+  const res = await api.post(`/caretaker/memories/${memoryId}/validate`, {
+    status,
+    edit_title: editTitle,
+    edit_content: editContent,
+  });
   return res.data;
 }

@@ -10,6 +10,8 @@ caretaker_ai_router = APIRouter(prefix="/caretaker", tags=["CareTaker AI"])
 
 class ValidateMemoryRequest(BaseModel):
     status: str  # ACTIVE | REJECTED
+    edit_title: Optional[str] = None
+    edit_content: Optional[str] = None
 
 
 def _summarize_conversation(messages: list) -> str:
@@ -18,6 +20,36 @@ def _summarize_conversation(messages: list) -> str:
             c = m["content"].strip()
             return (c[:80] + "...") if len(c) > 80 else c
     return "Conversation"
+
+
+@caretaker_ai_router.get("/patients/{patient_id}/memories/pending")
+def caretaker_pending_memories(patient_id: str, request: Request):
+    """List memories awaiting caregiver validation with score breakdown and source context."""
+    payload = get_auth_payload(request)
+    require_caretaker_patient(payload, patient_id)
+
+    pending = (
+        supabase.table("memories").select("*")
+        .eq("patient_id", patient_id).eq("status", "PENDING_VALIDATION")
+        .order("created_at", desc=True).execute()
+    ).data or []
+
+    out = []
+    for m in pending:
+        source_conv = None
+        if m.get("source_id"):
+            try:
+                c = supabase.table("messages").select("content, sender_type").eq("conversation_id", m["source_id"]).limit(3).execute()
+                if c.data:
+                    source_conv = " / ".join(f"{x.get('sender_type')}: {x.get('content')[:60]}" for x in c.data)
+            except Exception:
+                pass
+        out.append({
+            **m,
+            "source_preview": source_conv,
+            "score_breakdown": (m.get("metadata") or {}).get("score_breakdown"),
+        })
+    return out
 
 
 @caretaker_ai_router.get("/patients/{patient_id}/conversations")
@@ -124,14 +156,57 @@ def caretaker_daily_summary(patient_id: str, request: Request, date: Optional[st
 
 @caretaker_ai_router.post("/memories/{memory_id}/validate")
 def validate_memory(memory_id: str, data: ValidateMemoryRequest, request: Request):
+    """
+    Caregiver approves, edits, or rejects a pending memory.
+    If ACTIVE: synchronizes memory to ChromaDB.
+    If REJECTED: removes vector from ChromaDB.
+    """
+    from datetime import datetime, timezone
+    from agent import vectorstore
+
     payload = get_auth_payload(request)
     if payload.get("role") != "CareTaker":
         raise HTTPException(status_code=403, detail="CareTaker access required")
     if data.status not in ("ACTIVE", "REJECTED"):
         raise HTTPException(status_code=400, detail="status must be ACTIVE or REJECTED")
-    mem = supabase.table("memories").select("*").eq("id", memory_id).execute()
-    if not mem.data:
+
+    mem_res = supabase.table("memories").select("*").eq("id", memory_id).execute()
+    if not mem_res.data:
         raise HTTPException(status_code=404, detail="Memory not found")
-    require_caretaker_patient(payload, mem.data[0]["patient_id"])
-    supabase.table("memories").update({"status": data.status}).eq("id", memory_id).execute()
-    return {"message": f"Memory {data.status.lower()}"}
+    mem = mem_res.data[0]
+    pid = mem["patient_id"]
+    require_caretaker_patient(payload, pid)
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    updates = {
+        "status": data.status,
+        "updated_at": now_iso,
+    }
+
+    if data.edit_title:
+        updates["title"] = data.edit_title.strip()
+    if data.edit_content:
+        updates["content"] = data.edit_content.strip()
+
+    if data.status == "ACTIVE":
+        updates["last_confirmed_at"] = now_iso
+        final_title = updates.get("title", mem.get("title", ""))
+        final_content = updates.get("content", mem.get("content", ""))
+        final_type = mem.get("memory_type", "IMPORTANT_FACT")
+
+        supabase.table("memories").update(updates).eq("id", memory_id).execute()
+        # Synchronize to ChromaDB vector store
+        vectorstore.upsert_memory_vector(
+            patient_id=pid,
+            memory_id=memory_id,
+            text=f"{final_title}. {final_content}",
+            memory_type=final_type,
+            status="ACTIVE",
+        )
+    else:
+        supabase.table("memories").update(updates).eq("id", memory_id).execute()
+        # Remove from vector store
+        vectorstore.delete_memory_vector(patient_id=pid, memory_id=memory_id)
+
+    return {"message": f"Memory {data.status.lower()}", "memory_id": memory_id, "status": data.status}
+

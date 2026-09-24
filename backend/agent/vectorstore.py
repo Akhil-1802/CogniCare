@@ -54,23 +54,39 @@ def get_collection():
 
 
 def upsert_memory_vector(
-    patient_id: str, memory_id: str, text: str, memory_type: str
+    patient_id: str, memory_id: str, text: str, memory_type: str, status: str = "ACTIVE"
 ) -> bool:
     col = get_collection()
     if col is None:
         return False
-    vec = _embed([f"{text}"])
-    col.upsert(
-        ids=[memory_id],
-        embeddings=vec,
-        documents=[text[:4000]],
-        metadatas=[{
-            "patient_id": patient_id,
-            "memory_id": memory_id,
-            "memory_type": memory_type,
-        }],
-    )
-    return True
+    try:
+        vec = _embed([f"{text}"])
+        col.upsert(
+            ids=[memory_id],
+            embeddings=vec,
+            documents=[text[:4000]],
+            metadatas=[{
+                "patient_id": patient_id,
+                "memory_id": memory_id,
+                "memory_type": memory_type,
+                "status": status,
+            }],
+        )
+        return True
+    except Exception:
+        return False
+
+
+def delete_memory_vector(patient_id: str, memory_id: str) -> bool:
+    """Safely remove a vector record from ChromaDB (for expired/rejected/deleted memories)."""
+    col = get_collection()
+    if col is None:
+        return False
+    try:
+        col.delete(ids=[memory_id])
+        return True
+    except Exception:
+        return False
 
 
 def search_memory_vectors(
@@ -80,21 +96,30 @@ def search_memory_vectors(
     col = get_collection()
     if col is None or not query.strip():
         return []
-    vec = _embed([query])
-    res = col.query(
-        query_embeddings=vec,
-        n_results=k,
-        where={"patient_id": patient_id},
-    )
-    out = []
-    ids = (res.get("ids") or [[]])[0]
-    docs = (res.get("documents") or [[]])[0]
-    metas = (res.get("metadatas") or [[]])[0]
-    dists = (res.get("distances") or [[]])[0]
-    for i, mid in enumerate(ids):
-        out.append({
-            "memory_id": (metas[i] or {}).get("memory_id", mid) if i < len(metas) else mid,
-            "snippet": docs[i] if i < len(docs) else "",
-            "distance": dists[i] if i < len(dists) else None,
-        })
-    return out
+    try:
+        vec = _embed([query])
+        res = col.query(
+            query_embeddings=vec,
+            n_results=k,
+            where={"patient_id": patient_id},
+        )
+        out = []
+        ids = (res.get("ids") or [[]])[0]
+        docs = (res.get("documents") or [[]])[0]
+        metas = (res.get("metadatas") or [[]])[0]
+        dists = (res.get("distances") or [[]])[0]
+        for i, mid in enumerate(ids):
+            meta = metas[i] if i < len(metas) and metas[i] else {}
+            # Verify patient_id matches filter
+            if meta.get("patient_id") and meta.get("patient_id") != patient_id:
+                continue
+            out.append({
+                "memory_id": meta.get("memory_id", mid),
+                "snippet": docs[i] if i < len(docs) else "",
+                "distance": dists[i] if i < len(dists) else None,
+                "status": meta.get("status", "ACTIVE"),
+            })
+        return out
+    except Exception:
+        return []
+

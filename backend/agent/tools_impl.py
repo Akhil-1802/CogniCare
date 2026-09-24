@@ -47,31 +47,58 @@ def get_upcoming_appointments(patient_id: str, limit: int = 5):
 
 
 def search_patient_memories(patient_id: str, query: str, k: int = 5):
-    """PostgreSQL source of truth + Chroma semantic ranking, patient-scoped."""
-    hits = vectorstore.search_memory_vectors(patient_id, query, k=k)
+    """PostgreSQL source of truth + Chroma semantic ranking, strictly patient-scoped.
+    Only returns ACTIVE, unexpired memories."""
+    from datetime import datetime, timezone
+    now_dt = datetime.now(timezone.utc)
+    hits = vectorstore.search_memory_vectors(patient_id, query, k=k * 2)
     ids = [h["memory_id"] for h in hits]
     rows: list = []
     if ids:
         try:
-            res = supabase.table("memories").select("*").in_("id", ids).execute()
-            by_id = {r["id"]: r for r in (res.data or []) if r.get("patient_id") == patient_id}
-            rows = [by_id[i] for i in ids if i in by_id]
+            res = (
+                supabase.table("memories")
+                .select("*")
+                .in_("id", ids)
+                .eq("patient_id", patient_id)
+                .eq("status", "ACTIVE")
+                .execute()
+            )
+            by_id = {}
+            for r in (res.data or []):
+                # Filter out expired memories
+                if r.get("expires_at"):
+                    try:
+                        exp_dt = datetime.fromisoformat(r["expires_at"].replace("Z", "+00:00"))
+                        if exp_dt < now_dt:
+                            continue
+                    except Exception:
+                        pass
+                by_id[r["id"]] = r
+            rows = [by_id[i] for i in ids if i in by_id][:k]
         except Exception:
             rows = []
     if not rows:
-        # Keyword fallback, always patient-scoped
+        # Keyword fallback, always patient-scoped, ACTIVE, unexpired
         try:
             res = (
                 supabase.table("memories")
                 .select("*")
                 .eq("patient_id", patient_id)
                 .eq("status", "ACTIVE")
-                .limit(20)
+                .limit(30)
                 .execute()
             ).data or []
             q = (query or "").lower()
             keys = [w for w in q.split() if len(w) > 2][:8]
             for r in res:
+                if r.get("expires_at"):
+                    try:
+                        exp_dt = datetime.fromisoformat(r["expires_at"].replace("Z", "+00:00"))
+                        if exp_dt < now_dt:
+                            continue
+                    except Exception:
+                        pass
                 blob = f"{r.get('title','')} {r.get('content','')}".lower()
                 if any(k in blob for k in keys):
                     rows.append(r)

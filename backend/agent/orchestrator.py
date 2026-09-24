@@ -14,7 +14,7 @@ from db.supabase import supabase
 from config.settings import DISCLAIMER
 from agent import tools_impl
 from agent.extraction import extract_memory_candidate
-from agent.memory_service import create_or_update_memory
+from agent.memory_service import create_or_update_memory, process_patient_message_memories
 from agent.llm import chat_llm, require_key
 
 SYSTEM_PROMPT = """You are CogniCare, a warm and friendly AI companion for elderly patients.
@@ -657,22 +657,27 @@ class AgentOrchestrator:
         # Slow work (memory extraction + daily summary = up to 2 extra LLM
         # calls) runs in the background so it never delays the reply.
         def _post_process():
-            mem: dict = {"created": False}
+            mem_results: list = []
             try:
-                candidate = extract_memory_candidate(message, answer)
-                if candidate.get("should_create_memory"):
-                    mem = create_or_update_memory(patient_id, candidate, "conversation", cid)
-            except Exception:
-                pass
+                mem_results = process_patient_message_memories(
+                    patient_id=patient_id,
+                    patient_message=message,
+                    assistant_reply=answer,
+                    conversation_id=cid,
+                )
+            except Exception as e:
+                logger.warning("Background memory processing error: %s", e)
             try:
                 _llm_update_daily_summary(patient_id, date.today().isoformat(), message[:120], answer[:200])
             except Exception:
                 pass
             try:
+                mem_summary = mem_results[0] if len(mem_results) == 1 else ({"candidates": mem_results} if mem_results else {"created": False})
                 supabase.table("messages").update(
                     {"metadata": {
                         "sources": list(ctx.keys()),
-                        "memory": mem,
+                        "memory": mem_summary,
+                        "memories": mem_results,
                         "suggest_caretaker_escalation": should_suggest_escalation,
                         "escalation_question": message if should_suggest_escalation else None,
                     }}
