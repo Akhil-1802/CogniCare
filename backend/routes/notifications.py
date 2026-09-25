@@ -342,48 +342,62 @@ def get_notification_counts(request: Request):
     user_id = payload.get("sub")
 
     if role == "CareTaker":
-        # Count pending questions from patients
         pending = 0
         try:
             res = (
                 supabase.table("notifications")
-                .select("id")
+                .select("id, status")
                 .eq("caretaker_id", user_id)
-                .eq("status", "pending")
                 .execute()
             )
             if res.data is not None:
-                pending = len(res.data)
+                db_ids = {r["id"] for r in res.data}
+                pending_ids = {
+                    r["id"] for r in res.data
+                    if (r.get("status") or "").strip().lower() == "pending"
+                }
+                for n in _LOCAL_NOTIFICATIONS:
+                    if n.get("caretaker_id") == user_id and n["id"] not in db_ids:
+                        if (n.get("status") or "").strip().lower() == "pending":
+                            pending_ids.add(n["id"])
+                pending = len(pending_ids)
             else:
                 raise Exception("no data")
         except Exception:
             pending = len([
                 n for n in _LOCAL_NOTIFICATIONS
-                if n.get("caretaker_id") == user_id and n.get("status") == "pending"
+                if n.get("caretaker_id") == user_id and (n.get("status") or "").strip().lower() == "pending"
             ])
         return {"pending_questions": pending}
 
     elif role == "Patient":
-        # Count unread answered notifications from caretaker
         unread = 0
         try:
             res = (
                 supabase.table("notifications")
-                .select("id")
+                .select("id, status, patient_read")
                 .eq("patient_id", user_id)
-                .eq("status", "answered")
-                .eq("patient_read", False)
                 .execute()
             )
             if res.data is not None:
-                unread = len(res.data)
+                db_ids = {r["id"] for r in res.data}
+                unread_ids = {
+                    r["id"] for r in res.data
+                    if (r.get("status") or "").strip().lower() == "answered" and not r.get("patient_read")
+                }
+                for n in _LOCAL_NOTIFICATIONS:
+                    if n.get("patient_id") == user_id and n["id"] not in db_ids:
+                        if (n.get("status") or "").strip().lower() == "answered" and not n.get("patient_read"):
+                            unread_ids.add(n["id"])
+                unread = len(unread_ids)
             else:
                 raise Exception("no data")
         except Exception:
             unread = len([
                 n for n in _LOCAL_NOTIFICATIONS
-                if n.get("patient_id") == user_id and n.get("status") == "answered" and not n.get("patient_read")
+                if n.get("patient_id") == user_id and (n.get("status") or "").strip().lower() == "answered" and not n.get("patient_read")
             ])
         return {"unread_answers": unread}
 
     return {"pending_questions": 0, "unread_answers": 0}
+

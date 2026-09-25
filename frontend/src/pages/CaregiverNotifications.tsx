@@ -19,6 +19,7 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   getCaretakerNotifications,
   respondToNotification,
+  broadcastNotificationCount,
   type NotificationItem,
 } from "@/lib/notifications";
 
@@ -32,10 +33,11 @@ export default function CaregiverNotifications() {
   const [searchTerm, setSearchTerm] = useState("");
 
   const loadNotifications = async () => {
-    setLoading(true);
     try {
       const data = await getCaretakerNotifications(50);
       setNotifications(data);
+      const pendingCount = data.filter((n) => n.status === "pending").length;
+      broadcastNotificationCount(pendingCount);
     } catch {
       // If error or unauthenticated, keep empty
       setNotifications([]);
@@ -45,7 +47,10 @@ export default function CaregiverNotifications() {
   };
 
   useEffect(() => {
+    setLoading(true);
     loadNotifications();
+    const interval = setInterval(loadNotifications, 12000);
+    return () => clearInterval(interval);
   }, []);
 
   const handleReplyChange = (id: string, text: string) => {
@@ -76,6 +81,10 @@ export default function CaregiverNotifications() {
             : n
         )
       );
+      const remainingPending = notifications.filter(
+        (n) => n.id !== notif.id && n.status === "pending"
+      ).length;
+      broadcastNotificationCount(remainingPending);
       setReplyText((prev) => ({ ...prev, [notif.id]: "" }));
     } catch {
       alert("Failed to send response. Please try again.");

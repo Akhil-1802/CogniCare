@@ -84,3 +84,14 @@ export async function escalateAssistantQuestion(question: string, conversationId
   });
   return res.data;
 }
+
+export function broadcastNotificationCount(pendingCount: number) {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(
+      new CustomEvent("notifications_count_updated", {
+        detail: { pendingCount: Math.max(0, pendingCount) },
+      })
+    );
+  }
+}
+

@@ -84,6 +84,8 @@ def patient_login(data: PatientLoginRequest, response: Response):
 
     set_refresh_cookie(response, refresh_token)
 
+    caretaker_info = _get_caretaker_info(patient.get("caretaker_id"))
+
     return {
         "access_token": access_token,
         "token_type": "bearer",
@@ -94,8 +96,33 @@ def patient_login(data: PatientLoginRequest, response: Response):
             "phone": patient["phone"],
             "location": patient["location"],
             "caretaker_id": patient["caretaker_id"],
+            "caretaker": caretaker_info,
         },
     }
+
+
+def _get_caretaker_info(caretaker_id: str | None) -> dict | None:
+    if not caretaker_id:
+        return None
+    try:
+        c_res = supabase.table("caretakers").select("id,name,email,phone").eq("id", caretaker_id).execute()
+        if c_res.data:
+            c = c_res.data[0]
+            name = c.get("name") or "CareTaker"
+            parts = [p for p in name.split() if p]
+            initials = "".join(part[0].upper() for part in parts[:2]) if parts else "CT"
+            return {
+                "id": c.get("id"),
+                "name": name,
+                "email": c.get("email") or "",
+                "phone": c.get("phone") or "",
+                "relationship": "Primary CareTaker",
+                "status": "Online",
+                "avatar": initials,
+            }
+    except Exception:
+        pass
+    return None
 
 
 @patient_auth_router.post("/refresh")
@@ -168,4 +195,25 @@ def patient_me(request: Request):
     if not result.data:
         raise HTTPException(status_code=404, detail="Patient not found")
 
-    return result.data[0]
+    patient = result.data[0]
+    patient["caretaker"] = _get_caretaker_info(patient.get("caretaker_id"))
+    return patient
+
+
+@patient_auth_router.get("/caretaker")
+def get_patient_caretaker(request: Request):
+    auth_header = request.headers.get("Authorization")
+    if not auth_header or not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    token = auth_header.split(" ")[1]
+    payload = decode_access_token(token)
+
+    if not payload or payload.get("expired"):
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+    result = supabase.table("patients").select("id,name,caretaker_id").eq("id", payload["sub"]).execute()
+    if not result.data:
+        raise HTTPException(status_code=404, detail="Patient not found")
+
+    return _get_caretaker_info(result.data[0].get("caretaker_id"))
