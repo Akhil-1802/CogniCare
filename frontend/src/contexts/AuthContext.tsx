@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import api, { setAccessToken } from "@/lib/api";
+import type { CareTaker } from "@/types";
 
 interface User {
   id: string;
@@ -15,6 +16,7 @@ interface Patient {
   phone: string;
   location: string;
   caretaker_id: string;
+  caretaker?: CareTaker | null;
 }
 
 interface AuthContextType {

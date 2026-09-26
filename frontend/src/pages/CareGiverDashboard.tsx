@@ -6,10 +6,7 @@ import {
   CalendarPlus,
   Brain,
   Bell,
-  Clock,
   Users,
-  FileText,
-  Activity,
   ArrowRight,
   Sparkles,
   UserPlus,
@@ -21,6 +18,8 @@ import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
 import AddPatientModal from "@/components/AddPatientModal";
 import { fetchMyReminders, todayISO } from "@/lib/reminders";
+import { getNotificationCounts } from "@/lib/notifications";
+import api from "@/lib/api";
 
 const container = {
   hidden: { opacity: 0 },
@@ -43,13 +42,33 @@ const item = {
   },
 };
 
+function getGreeting(): string {
+  const hour = new Date().getHours();
+  if (hour < 12) return "Good morning";
+  if (hour < 17) return "Good afternoon";
+  return "Good evening";
+}
+
 export default function CareTakerDashboard() {
   const { user, patients } = useAuth();
   const [showAddPatient, setShowAddPatient] = useState(false);
   const [remindersToday, setRemindersToday] = useState(0);
   const [remindersDoneToday, setRemindersDoneToday] = useState(0);
+  const [pendingNotifications, setPendingNotifications] = useState(0);
+  const [pendingMemoryRequests, setPendingMemoryRequests] = useState(0);
 
-  const caretakerName = user && "name" in user ? user.name : "CareTaker";
+  const caretakerName = user && "name" in user && user.name ? user.name : "CareTaker";
+
+  useEffect(() => {
+    const handleCount = (e: Event) => {
+      const customEvent = e as CustomEvent<{ pendingCount: number }>;
+      if (typeof customEvent.detail?.pendingCount === "number") {
+        setPendingNotifications(customEvent.detail.pendingCount);
+      }
+    };
+    window.addEventListener("notifications_count_updated", handleCount);
+    return () => window.removeEventListener("notifications_count_updated", handleCount);
+  }, []);
 
   useEffect(() => {
     const load = async () => {
@@ -61,9 +80,38 @@ export default function CareTakerDashboard() {
         setRemindersToday(0);
         setRemindersDoneToday(0);
       }
+
+      try {
+        const counts = await getNotificationCounts();
+        setPendingNotifications(counts.pending_questions || 0);
+      } catch {
+        setPendingNotifications(0);
+      }
     };
     load();
   }, []);
+
+  useEffect(() => {
+    if (!patients || patients.length === 0) {
+      setPendingMemoryRequests(0);
+      return;
+    }
+    const loadPendingMemories = async () => {
+      try {
+        let total = 0;
+        for (const p of patients) {
+          const res = await api.get(`/caretaker/patients/${p.id}/memories/pending`);
+          if (Array.isArray(res.data)) {
+            total += res.data.length;
+          }
+        }
+        setPendingMemoryRequests(total);
+      } catch {
+        setPendingMemoryRequests(0);
+      }
+    };
+    loadPendingMemories();
+  }, [patients]);
 
   return (
     <motion.div
@@ -73,11 +121,10 @@ export default function CareTakerDashboard() {
       className="space-y-8 pb-20 lg:pb-8"
     >
       {/* Header */}
-
       <motion.div variants={item}>
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <p className="text-sm font-medium text-sky-600">Good Morning</p>
+            <p className="text-sm font-medium text-sky-600">{getGreeting()}</p>
 
             <h1 className="mt-1 text-2xl font-bold text-slate-900 sm:text-3xl">
               Welcome back, {caretakerName.split(" ")[0]}
@@ -101,7 +148,6 @@ export default function CareTakerDashboard() {
       </motion.div>
 
       {/* Today's Summary */}
-
       <motion.div variants={item}>
         <Card className="overflow-hidden border-0 bg-gradient-to-br from-sky-600 to-blue-700 text-white shadow-[var(--shadow-elevated)]">
           <CardContent className="p-6 sm:p-8">
@@ -109,8 +155,7 @@ export default function CareTakerDashboard() {
               <div>
                 <div className="flex items-center gap-2">
                   <Sparkles className="h-5 w-5 text-sky-200" />
-
-                  <h2 className="text-lg font-semibold">Today's Summary</h2>
+                  <h2 className="text-lg font-semibold">Today&apos;s Summary</h2>
                 </div>
 
                 <p className="mt-2 text-sm text-sky-100">
@@ -126,19 +171,16 @@ export default function CareTakerDashboard() {
             <div className="mt-6 grid grid-cols-3 gap-4">
               <div className="rounded-xl bg-white/10 p-4 backdrop-blur-sm">
                 <p className="text-2xl font-bold">{patients.length}</p>
-
                 <p className="mt-1 text-xs text-sky-100">Total Patients</p>
               </div>
 
               <div className="rounded-xl bg-white/10 p-4 backdrop-blur-sm">
                 <p className="text-2xl font-bold">{remindersToday}</p>
-
                 <p className="mt-1 text-xs text-sky-100">Reminders Today</p>
               </div>
 
               <div className="rounded-xl bg-white/10 p-4 backdrop-blur-sm">
                 <p className="text-2xl font-bold">{remindersDoneToday}</p>
-
                 <p className="mt-1 text-xs text-sky-100">Fulfilled Today</p>
               </div>
             </div>
@@ -147,7 +189,6 @@ export default function CareTakerDashboard() {
       </motion.div>
 
       {/* Patients List */}
-
       <motion.div variants={item}>
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-lg font-semibold text-slate-900">
@@ -163,7 +204,7 @@ export default function CareTakerDashboard() {
         </div>
 
         {patients.length === 0 ? (
-          <Card className="border-dashed">
+          <Card className="border-dashed border-slate-200 bg-white">
             <CardContent className="flex flex-col items-center justify-center p-8">
               <div className="flex h-14 w-14 items-center justify-center rounded-full bg-sky-50">
                 <Users className="h-7 w-7 text-sky-400" />
@@ -184,37 +225,49 @@ export default function CareTakerDashboard() {
           </Card>
         ) : (
           <div className="space-y-3">
-            {patients.map((patient) => (
-              <Link key={patient.id} to="/caregiver/patients">
-                <Card className="transition-shadow hover:shadow-md">
-                  <CardContent className="flex items-center gap-4 p-4">
-                    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-sky-100 text-lg">
-                      👤
-                    </div>
+            {patients.map((patient) => {
+              const initials = patient.name
+                ? patient.name
+                    .split(" ")
+                    .filter(Boolean)
+                    .map((n) => n[0])
+                    .join("")
+                    .slice(0, 2)
+                    .toUpperCase()
+                : "PT";
 
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate font-medium text-slate-900">
-                        {patient.name}
-                      </p>
-                      <p className="text-sm text-slate-500">
-                        {patient.id} &middot; {patient.location}
-                      </p>
-                    </div>
+              return (
+                <Link key={patient.id} to="/caregiver/patients">
+                  <Card className="transition-shadow hover:shadow-md border-slate-200 bg-white">
+                    <CardContent className="flex items-center gap-4 p-4">
+                      <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-sky-500 to-blue-600 text-white font-bold text-sm shadow-sm shrink-0">
+                        {initials}
+                      </div>
 
-                    <Badge className="bg-green-100 text-green-700">
-                      Active
-                    </Badge>
-                    <span className="text-sm font-medium text-sky-600">Manage →</span>
-                  </CardContent>
-                </Card>
-              </Link>
-            ))}
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate font-semibold text-slate-900">
+                          {patient.name}
+                        </p>
+                        <p className="text-sm text-slate-500 truncate">
+                          ID: <span className="font-mono text-slate-700 font-medium">{patient.id}</span>
+                          {patient.location ? ` • ${patient.location}` : ""}
+                        </p>
+                      </div>
+
+                      <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200">
+                        Active
+                      </Badge>
+                      <span className="text-sm font-medium text-sky-600 shrink-0">Manage →</span>
+                    </CardContent>
+                  </Card>
+                </Link>
+              );
+            })}
           </div>
         )}
       </motion.div>
 
       {/* Quick Actions */}
-
       <motion.div variants={item}>
         <h2 className="mb-4 text-lg font-semibold text-slate-900">
           Quick Actions
@@ -238,14 +291,22 @@ export default function CareTakerDashboard() {
             },
             {
               title: "Memory Requests",
-              description: "Validate patient memories",
+              description:
+                pendingMemoryRequests > 0
+                  ? `${pendingMemoryRequests} memory awaiting your review`
+                  : "Validate patient memories",
+              badge: pendingMemoryRequests > 0 ? `${pendingMemoryRequests}` : undefined,
               icon: Brain,
               path: "/caregiver/memory-requests",
               color: "from-violet-500 to-purple-600",
             },
             {
               title: "Notifications",
-              description: "Patient alerts",
+              description:
+                pendingNotifications > 0
+                  ? `${pendingNotifications} inquiry awaiting your reply`
+                  : "Patient alerts & inquiries",
+              badge: pendingNotifications > 0 ? `${pendingNotifications}` : undefined,
               icon: Bell,
               path: "/caregiver/notifications",
               color: "from-amber-500 to-orange-600",
@@ -256,7 +317,7 @@ export default function CareTakerDashboard() {
                 whileHover={{ y: -2, scale: 1.01 }}
                 whileTap={{ scale: 0.99 }}
               >
-                <Card className="group h-full cursor-pointer transition-shadow hover:shadow-[var(--shadow-elevated)]">
+                <Card className="group h-full cursor-pointer transition-shadow hover:shadow-[var(--shadow-elevated)] border-slate-200 bg-white">
                   <CardContent className="flex items-start gap-4 p-5">
                     <div
                       className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br ${action.color} shadow-sm`}
@@ -265,9 +326,16 @@ export default function CareTakerDashboard() {
                     </div>
 
                     <div className="min-w-0 flex-1">
-                      <h3 className="font-semibold text-slate-900 transition-colors group-hover:text-sky-700">
-                        {action.title}
-                      </h3>
+                      <div className="flex items-center gap-2">
+                        <h3 className="font-semibold text-slate-900 transition-colors group-hover:text-sky-700">
+                          {action.title}
+                        </h3>
+                        {"badge" in action && action.badge && (
+                          <span className="rounded-full bg-amber-500 text-white px-2 py-0.5 text-xs font-bold animate-pulse">
+                            {action.badge}
+                          </span>
+                        )}
+                      </div>
 
                       <p className="mt-1 text-sm text-slate-500">
                         {action.description}

@@ -38,10 +38,13 @@ export interface MemoryExtraction {
 }
 
 export interface CareTaker {
+  id?: string;
   name: string;
   relationship: string;
-  status: "Online" | "Offline";
+  status: "Online" | "Offline" | string;
   avatar: string;
+  email?: string;
+  phone?: string;
 }
 
 export type ReminderType = "medicine" | "appointment" | "general";

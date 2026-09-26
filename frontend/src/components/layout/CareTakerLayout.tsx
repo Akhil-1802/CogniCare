@@ -39,6 +39,19 @@ export function CareTakerLayout({ children }: CareTakerLayoutProps) {
   const { user, logout } = useAuth();
 
   useEffect(() => {
+    const handleCountUpdate = (e: Event) => {
+      const customEvent = e as CustomEvent<{ pendingCount: number }>;
+      if (typeof customEvent.detail?.pendingCount === "number") {
+        setPendingCount(customEvent.detail.pendingCount);
+      }
+    };
+    window.addEventListener("notifications_count_updated", handleCountUpdate);
+    return () => {
+      window.removeEventListener("notifications_count_updated", handleCountUpdate);
+    };
+  }, []);
+
+  useEffect(() => {
     const fetchCounts = async () => {
       try {
         const counts = await getNotificationCounts();
@@ -48,9 +61,9 @@ export function CareTakerLayout({ children }: CareTakerLayoutProps) {
       }
     };
     fetchCounts();
-    const interval = setInterval(fetchCounts, 15000);
+    const interval = setInterval(fetchCounts, 10000);
     return () => clearInterval(interval);
-  }, []);
+  }, [location.pathname]);
 
   const NavLink = ({ path, label, icon: Icon }: (typeof navItems)[0]) => {
     const isActive = location.pathname === path;
