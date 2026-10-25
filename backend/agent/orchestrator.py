@@ -112,11 +112,15 @@ def _ensure_conversation(patient_id: str, conversation_id: str | None) -> str:
     return cid
 
 
+_processed_message_ids = set()
+
+
 def _store_message(conversation_id: str, sender: str, content: str,
-                   tool_name: str | None = None, metadata: dict | None = None):
+                   tool_name: str | None = None, metadata: dict | None = None) -> str:
+    mid = uuid.uuid4().hex
     try:
         supabase.table("messages").insert({
-            "id": uuid.uuid4().hex,
+            "id": mid,
             "conversation_id": conversation_id,
             "sender_type": sender,
             "content": content[:4000],
@@ -126,6 +130,7 @@ def _store_message(conversation_id: str, sender: str, content: str,
         }).execute()
     except Exception:
         pass
+    return mid
 
 
 def _recent_history(conversation_id: str, limit: int = 10) -> list:
@@ -501,7 +506,7 @@ class AgentOrchestrator:
         if not message:
             raise ValueError("Message is required")
         cid = _ensure_conversation(patient_id, conversation_id)
-        _store_message(cid, "PATIENT", message)
+        patient_msg_id = _store_message(cid, "PATIENT", message)
         history = _recent_history(cid)
 
         # Check if user is confirming or declining a pending escalation offer to ask the caretaker
@@ -657,6 +662,10 @@ class AgentOrchestrator:
         # Slow work (memory extraction + daily summary = up to 2 extra LLM
         # calls) runs in the background so it never delays the reply.
         def _post_process():
+            if patient_msg_id in _processed_message_ids:
+                logger.info("Message %s already processed for memories, skipping duplicate extraction.", patient_msg_id)
+                return
+            _processed_message_ids.add(patient_msg_id)
             mem_results: list = []
             try:
                 mem_results = process_patient_message_memories(
@@ -664,6 +673,7 @@ class AgentOrchestrator:
                     patient_message=message,
                     assistant_reply=answer,
                     conversation_id=cid,
+                    message_id=patient_msg_id,
                 )
             except Exception as e:
                 logger.warning("Background memory processing error: %s", e)
@@ -758,9 +768,10 @@ def _route_tools(message: str) -> list[str]:
     if any(k in t for k in ("report", "document", "prescription says")):
         tools.append("search_patient_documents")
     if any(k in t for k in (
-        "who is", "emily", "daughter", "remember", "family", "discuss", "yesterday",
+        "who is", "emily", "daughter", "son", "wife", "husband", "brother", "sister",
+        "family", "friend", "remember", "discuss", "yesterday", "told you", "tell you",
         "wallet", "keys", "glasses", "spectacles", "watch", "phone", "bag", "purse",
-        "where is", "where are"
+        "where is", "where are", "prefer", "preference", "favorite", "favourite"
     )):
         tools.append("search_patient_memories")
     return tools[:3]

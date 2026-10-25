@@ -75,9 +75,9 @@ def classify_candidate_relation(candidate: ExtractedFactCandidate, existing: dic
     """
     Classifies relationship between new candidate and existing memory:
     - 'DUPLICATE': Identical or virtually identical fact.
-    - 'CONFLICT': Contradictory information or major update on same subject/entity.
-    - 'REINFORCEMENT': Same verified fact repeated.
-    - 'NEW_FACT': Distinct event or separate topic.
+    - 'UPDATE_CANDIDATE': New or changed information superseding an existing fact.
+    - 'CONFLICT': Contradictory information on same subject requiring review.
+    - 'NEW': Distinct event or separate topic.
     """
     old_content = (existing.get("content") or "").strip().lower()
     new_content = candidate.content.strip().lower()
@@ -93,20 +93,25 @@ def classify_candidate_relation(candidate: ExtractedFactCandidate, existing: dic
     new_type = candidate.memory_type
 
     if old_type != new_type and ("event" in (old_type or "").lower() or "event" in (new_type or "").lower()):
-        return "NEW_FACT"
+        return "NEW"
 
-    # If title is identical or very similar but content differs noticeably:
+    # Check for update markers indicating changing status/location/schedule
+    update_markers = ["moved to", "lives in now", "changed to", "new address", "new phone", "switched to", "now lives", "no longer", "instead of"]
+    has_update_marker = any(m in new_content for m in update_markers)
+
+    # If title is identical or very similar:
     # E.g. "Emily lives in Delhi" vs "Emily moved to Mumbai"
-    if (old_title == new_title or (old_title in new_title and len(old_title) > 5)):
-        # Contradictory update or conflict
+    if old_title == new_title or (old_title in new_title and len(old_title) > 5):
+        return "UPDATE_CANDIDATE" if has_update_marker else "CONFLICT"
+
+    # Entity-level conflict / update check
+    if has_update_marker and any(e.lower() in old_content for e in candidate.entities if len(e) > 3):
+        return "UPDATE_CANDIDATE"
+
+    if any(e.lower() in old_content for e in candidate.entities if len(e) > 3) and old_type == new_type:
         return "CONFLICT"
 
-    # Entity-level conflict check (e.g. lives in, moved, changed phone)
-    conflict_markers = ["moved to", "lives in", "changed", "new address", "no longer", "instead of"]
-    if any(m in new_content for m in conflict_markers) and any(e.lower() in old_content for e in candidate.entities if len(e) > 3):
-        return "CONFLICT"
-
-    return "NEW_FACT"
+    return "NEW"
 
 
 def create_or_update_memory(
@@ -115,6 +120,7 @@ def create_or_update_memory(
     source_type: str = "conversation",
     source_id: Optional[str] = None,
     source_message_id: Optional[str] = None,
+    source_document_id: Optional[str] = None,
     speech_confidence: float = 1.0,
 ) -> dict:
     """
@@ -130,7 +136,7 @@ def create_or_update_memory(
         if "candidates" in extraction:
             cands = extraction.get("candidates")
             if cands and isinstance(cands, list):
-                return create_or_update_memory(patient_id, cands[0], source_type, source_id, source_message_id, speech_confidence)
+                return create_or_update_memory(patient_id, cands[0], source_type, source_id, source_message_id, source_document_id, speech_confidence)
         # Check if legacy format
         if extraction.get("should_create_memory") is False:
             return {"created": False, "reason": "invalid_or_not_important"}
@@ -145,6 +151,8 @@ def create_or_update_memory(
                 importance_estimate=imp_val,
                 source_conversation_id=source_id,
                 source_message_id=source_message_id,
+                source_document_id=source_document_id,
+                source_type=source_type,
             )
         else:
             cand = validate_candidate(extraction)
@@ -160,6 +168,7 @@ def create_or_update_memory(
 
     conflict_with_id: Optional[str] = None
     novelty_score = 100.0
+    detected_relation = "NEW"
 
     for d in dups:
         rel = classify_candidate_relation(candidate, d)
@@ -175,8 +184,9 @@ def create_or_update_memory(
             except Exception:
                 pass
             return {"created": False, "reason": "duplicate", "memory_id": d["id"]}
-        elif rel == "CONFLICT":
+        elif rel in ("CONFLICT", "UPDATE_CANDIDATE"):
             conflict_with_id = d["id"]
+            detected_relation = rel
             novelty_score = 70.0
             break
 
@@ -185,6 +195,7 @@ def create_or_update_memory(
         candidate=candidate,
         novelty_score=novelty_score,
         speech_confidence=speech_confidence,
+        duplicate_status=detected_relation,
     )
 
     # Step 3: Evaluate Decision & Retention
@@ -192,6 +203,8 @@ def create_or_update_memory(
         candidate=candidate,
         score_breakdown=score_breakdown,
         has_conflict=bool(conflict_with_id),
+        supersedes_id=conflict_with_id if detected_relation == "UPDATE_CANDIDATE" else None,
+        duplicate_status=detected_relation,
     )
 
     if decision_result.decision == "DISCARD":
@@ -202,7 +215,7 @@ def create_or_update_memory(
             "decision": decision_result.decision,
         }
 
-    # Step 4: Persist in PostgreSQL
+    # Step 4: Persist in PostgreSQL (Source of Truth)
     mid = uuid.uuid4().hex
     importance_label = "HIGH" if score_breakdown.importance >= 75 else ("LOW" if score_breakdown.importance < 40 else "MEDIUM")
 
@@ -224,9 +237,9 @@ def create_or_update_memory(
         "retention_policy": decision_result.retention_policy,
         "last_confirmed_at": now,
         "expires_at": decision_result.expires_at,
-        "source_type": source_type,
-        "source_id": source_id,
-        "source_message_id": source_message_id,
+        "source_type": source_type or candidate.source_type,
+        "source_id": source_id or candidate.source_conversation_id,
+        "source_message_id": source_message_id or candidate.source_message_id,
         "status": decision_result.status,
         "metadata": {
             "score_breakdown": score_breakdown.model_dump(),
@@ -234,8 +247,11 @@ def create_or_update_memory(
             "entities": candidate.entities,
             "event_date": candidate.event_date,
             "conflict_with": conflict_with_id,
+            "supersedes_id": conflict_with_id if detected_relation == "UPDATE_CANDIDATE" else None,
             "requires_review": decision_result.requires_review,
+            "review_reason": decision_result.review_reason,
             "reason": decision_result.reason,
+            "vector_synced": False,
         },
         "created_at": now,
         "updated_at": now,
@@ -248,17 +264,31 @@ def create_or_update_memory(
         return {"created": False, "reason": f"db_error: {e}"}
 
     # Step 5: Sync to ChromaDB (Only ACTIVE memories indexed for ordinary retrieval)
+    vector_synced = False
+    vector_sync_error = None
     if decision_result.status == "ACTIVE":
         try:
-            vectorstore.upsert_memory_vector(
+            ok = vectorstore.upsert_memory_vector(
                 patient_id=patient_id,
                 memory_id=mid,
                 text=f"{candidate.title}. {candidate.content}",
                 memory_type=candidate.memory_type,
                 status="ACTIVE",
             )
+            vector_synced = bool(ok)
         except Exception as e:
             logger.warning("ChromaDB vector sync failed (Postgres record preserved): %s", e)
+            vector_sync_error = str(e)
+            vector_synced = False
+
+        if vector_synced or vector_sync_error:
+            try:
+                row["metadata"]["vector_synced"] = vector_synced
+                if vector_sync_error:
+                    row["metadata"]["vector_sync_error"] = vector_sync_error
+                supabase.table("memories").update({"metadata": row["metadata"]}).eq("id", mid).execute()
+            except Exception:
+                pass
 
     out = {
         "created": True,
@@ -266,9 +296,12 @@ def create_or_update_memory(
         "status": decision_result.status,
         "decision": decision_result.decision,
         "total_score": score_breakdown.total_score,
+        "vector_synced": vector_synced,
     }
     if conflict_with_id:
         out["conflict_with"] = conflict_with_id
+    if detected_relation == "UPDATE_CANDIDATE":
+        out["supersedes_id"] = conflict_with_id
     return out
 
 
@@ -418,13 +451,13 @@ def search_verified_memories(patient_id: str, query: str, limit: int = 5) -> Lis
                 float(mem.get("total_score") or 70.0), confirmed_dt, mem.get("memory_type", "IMPORTANT_FACT"), now_dt
             )
             verified_results.append({
-                "id": mem["id"],
-                "title": mem["title"],
-                "content": mem["content"],
-                "memory_type": mem["memory_type"],
+                "id": mem.get("id"),
+                "title": mem.get("title", ""),
+                "content": mem.get("content", ""),
+                "memory_type": mem.get("memory_type", "IMPORTANT_FACT"),
                 "distance": h.get("distance"),
                 "relevance_score": relevance,
-                "created_at": mem["created_at"],
+                "created_at": mem.get("created_at", ""),
             })
             if len(verified_results) >= limit:
                 break
@@ -492,3 +525,189 @@ def delete_patient_memory(patient_id: str, memory_id: str, soft_delete: bool = T
         return True
     except Exception:
         return False
+
+
+def reconcile_memory_vectors(patient_id: Optional[str] = None, force_reindex: bool = False) -> dict:
+    """
+    Reconciles ChromaDB vector index with PostgreSQL source of truth.
+    1. Upserts any ACTIVE unexpired memories missing in ChromaDB or marked vector_synced=False.
+    2. Removes any vectors from ChromaDB for memories that are EXPIRED, ARCHIVED, or REJECTED.
+    3. Idempotent and safe to run multiple times.
+    """
+    now_dt = datetime.now(timezone.utc)
+    now_iso = now_dt.isoformat()
+
+    try:
+        q = supabase.table("memories").select("*")
+        if patient_id:
+            q = q.eq("patient_id", patient_id)
+        rows = q.execute().data or []
+    except Exception as e:
+        logger.error("Failed to query memories for vector reconciliation: %s", e)
+        return {"success": False, "error": str(e), "synced": 0, "deleted": 0, "failed": 0}
+
+    synced_count = 0
+    deleted_count = 0
+    failed_count = 0
+
+    for mem in rows:
+        mid = mem["id"]
+        pid = mem["patient_id"]
+        st = mem.get("status")
+        meta = mem.get("metadata") or {}
+
+        # Check expiration
+        is_expired = False
+        if mem.get("expires_at"):
+            try:
+                exp_dt = datetime.fromisoformat(mem["expires_at"].replace("Z", "+00:00"))
+                if exp_dt < now_dt:
+                    is_expired = True
+            except Exception:
+                pass
+
+        if st == "ACTIVE" and not is_expired:
+            already_synced = meta.get("vector_synced") is True
+            if not already_synced or force_reindex:
+                try:
+                    ok = vectorstore.upsert_memory_vector(
+                        patient_id=pid,
+                        memory_id=mid,
+                        text=f"{mem.get('title')}. {mem.get('content')}",
+                        memory_type=mem.get("memory_type", "IMPORTANT_FACT"),
+                        status="ACTIVE",
+                    )
+                    if ok:
+                        meta["vector_synced"] = True
+                        meta.pop("vector_sync_error", None)
+                        supabase.table("memories").update({
+                            "metadata": meta,
+                            "updated_at": now_iso,
+                        }).eq("id", mid).execute()
+                        synced_count += 1
+                    else:
+                        failed_count += 1
+                except Exception as e:
+                    logger.warning("Vector reconciliation failed for memory %s: %s", mid, e)
+                    failed_count += 1
+        else:
+            # Memory is EXPIRED, ARCHIVED, REJECTED, or PENDING_VALIDATION -> remove from ChromaDB
+            try:
+                vectorstore.delete_memory_vector(patient_id=pid, memory_id=mid)
+                deleted_count += 1
+            except Exception:
+                pass
+
+    return {
+        "success": True,
+        "synced": synced_count,
+        "deleted": deleted_count,
+        "failed": failed_count,
+    }
+
+
+def resolve_memory_conflict(
+    patient_id: str,
+    candidate_memory_id: str,
+    action: str,  # "keep_existing", "replace_with_candidate", "edit"
+    edit_title: Optional[str] = None,
+    edit_content: Optional[str] = None,
+    resolver_role: str = "CareTaker",
+) -> dict:
+    """
+    Resolves a conflict or update between a candidate memory and an existing memory:
+    - 'keep_existing': rejects the candidate memory and preserves the existing fact.
+    - 'replace_with_candidate': archives the superseded memory with an audit trace, activates candidate, syncs vector.
+    - 'edit': updates candidate title/content, archives the old memory, activates candidate, syncs vector.
+    """
+    cand_res = (
+        supabase.table("memories").select("*").eq("id", candidate_memory_id).execute()
+    )
+    if not cand_res.data or cand_res.data[0].get("patient_id") != patient_id:
+        return {"success": False, "error": "Candidate memory not found"}
+
+    cand = cand_res.data[0]
+    meta = cand.get("metadata") or {}
+    conflict_with_id = meta.get("conflict_with") or meta.get("supersedes_id")
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    if action == "keep_existing":
+        # Reject candidate
+        supabase.table("memories").update({
+            "status": "REJECTED",
+            "updated_at": now_iso,
+            "metadata": {
+                **meta,
+                "rejection_reason": "Caregiver chose to keep existing memory",
+                "resolved_at": now_iso,
+                "resolved_by": resolver_role,
+            },
+        }).eq("id", candidate_memory_id).execute()
+        vectorstore.delete_memory_vector(patient_id, candidate_memory_id)
+        return {
+            "success": True,
+            "action": "keep_existing",
+            "rejected_id": candidate_memory_id,
+        }
+
+    elif action in ("replace_with_candidate", "edit"):
+        # Archive the old conflicting/superseded memory if exists
+        if conflict_with_id:
+            try:
+                old_mem = (
+                    supabase.table("memories").select("*").eq("id", conflict_with_id).execute()
+                ).data
+                if old_mem:
+                    old_meta = old_mem[0].get("metadata") or {}
+                    supabase.table("memories").update({
+                        "status": "ARCHIVED",
+                        "updated_at": now_iso,
+                        "metadata": {
+                            **old_meta,
+                            "superseded_by": candidate_memory_id,
+                            "archived_at": now_iso,
+                            "archived_reason": "Superseded by confirmed update",
+                        },
+                    }).eq("id", conflict_with_id).execute()
+                    vectorstore.delete_memory_vector(patient_id, conflict_with_id)
+            except Exception as e:
+                logger.warning("Could not archive previous memory %s: %s", conflict_with_id, e)
+
+        # Activate candidate
+        cand_updates: Dict[str, Any] = {
+            "status": "ACTIVE",
+            "last_confirmed_at": now_iso,
+            "updated_at": now_iso,
+        }
+        if edit_title and edit_title.strip():
+            cand_updates["title"] = edit_title.strip()
+        if edit_content and edit_content.strip():
+            cand_updates["content"] = edit_content.strip()
+
+        cand_meta = {
+            **meta,
+            "resolved_at": now_iso,
+            "resolved_by": resolver_role,
+            "vector_synced": True,
+        }
+        cand_updates["metadata"] = cand_meta
+
+        supabase.table("memories").update(cand_updates).eq("id", candidate_memory_id).execute()
+        final_title = cand_updates.get("title", cand.get("title", ""))
+        final_content = cand_updates.get("content", cand.get("content", ""))
+        vectorstore.upsert_memory_vector(
+            patient_id=patient_id,
+            memory_id=candidate_memory_id,
+            text=f"{final_title}. {final_content}",
+            memory_type=cand.get("memory_type", "IMPORTANT_FACT"),
+            status="ACTIVE",
+        )
+        return {
+            "success": True,
+            "action": action,
+            "active_id": candidate_memory_id,
+            "archived_id": conflict_with_id,
+        }
+
+    return {"success": False, "error": f"Unknown action '{action}'"}
+

@@ -35,7 +35,7 @@ def _get_caretaker_for_patient(patient_id: str) -> Optional[dict]:
                 "caretaker_phone": ct.get("phone", ""),
             }
     except Exception as e:
-        logger.warning("Could not lookup caretaker for patient %s: %e", patient_id, e)
+        logger.warning("Could not lookup caretaker for patient %s: %s", patient_id, e)
     return None
 
 

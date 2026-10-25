@@ -43,36 +43,47 @@ class MemoryScoringService:
         candidate: ExtractedFactCandidate,
         novelty_score: float = 100.0,
         speech_confidence: float = 1.0,
+        duplicate_status: str = "NEW",
     ) -> ScoreBreakdown:
         """
         Calculates individual factor scores and weighted total score.
         All individual factors and the total score are clamped between 0 and 100.
+        Includes short reasoning for each factor.
         """
         defaults = TYPE_DEFAULTS.get(candidate.memory_type, {"importance": 70.0, "usefulness": 70.0, "persistence": 50.0})
 
         # 1. Importance (30%)
         raw_imp = candidate.importance_estimate if candidate.importance_estimate is not None else defaults["importance"]
         importance = max(0.0, min(100.0, float(raw_imp)))
+        imp_reason = f"Category '{candidate.memory_type}' with assessed importance {importance:.0f}/100."
 
         # 2. Confidence (25%)
         # Convert 0-1 scale to 0-100, adjusting for speech confidence and ambiguity flags
         base_conf = float(candidate.confidence) * 100.0
+        conf_reason = f"Candidate base confidence: {base_conf:.0f}%."
         if speech_confidence < 1.0:
             base_conf = base_conf * speech_confidence
+            conf_reason += f" Adjusted for speech confidence {speech_confidence:.2f}."
         if candidate.requires_confirmation:
             base_conf = min(base_conf, 65.0)
+            conf_reason += " Capped at 65% due to confirmation requirement."
         confidence = max(0.0, min(100.0, base_conf))
 
         # 3. Future Usefulness (20%)
         raw_use = candidate.usefulness_estimate if candidate.usefulness_estimate is not None else defaults["usefulness"]
         usefulness = max(0.0, min(100.0, float(raw_use)))
+        use_reason = f"Estimated utility for future patient recall is {usefulness:.0f}/100."
 
         # 4. Persistence (15%)
         raw_pers = candidate.persistence_estimate if candidate.persistence_estimate is not None else defaults["persistence"]
         persistence = max(0.0, min(100.0, float(raw_pers)))
+        pers_reason = f"Durability profile for '{candidate.memory_type}': {persistence:.0f}/100."
 
         # 5. Novelty (10%)
-        novelty = max(0.0, min(100.0, float(novelty_score)))
+        raw_nov = candidate.novelty_estimate if candidate.novelty_estimate is not None else novelty_score
+        novelty = max(0.0, min(100.0, float(raw_nov)))
+        dup_stat = candidate.duplicate_status or duplicate_status
+        nov_reason = f"Assessed as {dup_stat} fact with novelty rating {novelty:.0f}/100."
 
         weights = cls.get_weights()
         total_score = (
@@ -84,6 +95,14 @@ class MemoryScoringService:
         )
         total_score = round(max(0.0, min(100.0, total_score)), 2)
 
+        reasoning = {
+            "importance": imp_reason,
+            "confidence": conf_reason,
+            "future_usefulness": use_reason,
+            "persistence": pers_reason,
+            "novelty": nov_reason,
+        }
+
         return ScoreBreakdown(
             importance=round(importance, 2),
             confidence=round(confidence, 2),
@@ -92,6 +111,8 @@ class MemoryScoringService:
             novelty=round(novelty, 2),
             total_score=total_score,
             weights=weights,
+            reasoning=reasoning,
+            duplicate_status=dup_stat,
         )
 
     @classmethod
@@ -103,6 +124,7 @@ class MemoryScoringService:
         persistence: float,
         novelty: float,
         weights_override: Optional[Dict[str, float]] = None,
+        duplicate_status: str = "NEW",
     ) -> ScoreBreakdown:
         """Helper for unit tests and direct scoring simulation."""
         imp = max(0.0, min(100.0, float(importance)))
@@ -121,6 +143,14 @@ class MemoryScoringService:
         )
         total = round(max(0.0, min(100.0, total)), 2)
 
+        reasoning = {
+            "importance": f"Custom importance score {imp:.0f}/100",
+            "confidence": f"Custom confidence score {conf:.0f}/100",
+            "future_usefulness": f"Custom usefulness score {use:.0f}/100",
+            "persistence": f"Custom persistence score {pers:.0f}/100",
+            "novelty": f"Custom novelty score {nov:.0f}/100 ({duplicate_status})",
+        }
+
         return ScoreBreakdown(
             importance=round(imp, 2),
             confidence=round(conf, 2),
@@ -129,4 +159,6 @@ class MemoryScoringService:
             novelty=round(nov, 2),
             total_score=total,
             weights=weights,
+            reasoning=reasoning,
+            duplicate_status=duplicate_status,
         )

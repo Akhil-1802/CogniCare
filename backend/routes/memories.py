@@ -16,6 +16,8 @@ from agent.memory_service import (
     update_patient_memory,
     delete_patient_memory,
     create_or_update_memory,
+    reconcile_memory_vectors,
+    resolve_memory_conflict,
 )
 
 memories_router = APIRouter(prefix="/api/v1/memories", tags=["Memories"])
@@ -32,6 +34,12 @@ class MemoryUpdateRequest(BaseModel):
     title: Optional[str] = None
     content: Optional[str] = None
     reconfirm: Optional[bool] = False
+
+
+class ConflictResolveRequest(BaseModel):
+    action: str = Field(..., description="'keep_existing', 'replace_with_candidate', or 'edit'")
+    edit_title: Optional[str] = None
+    edit_content: Optional[str] = None
 
 
 @memories_router.post("/extract")
@@ -232,3 +240,165 @@ def delete_memory(memory_id: str, request: Request):
     if not success:
         raise HTTPException(status_code=500, detail="Failed to delete memory")
     return {"message": "Memory archived successfully"}
+
+
+@memories_router.get("/pending")
+def list_pending_memories(
+    request: Request,
+    patient_id: Optional[str] = None,
+    limit: int = Query(default=50, le=100),
+):
+    """List memories in PENDING_VALIDATION status awaiting caregiver confirmation."""
+    payload = get_auth_payload(request)
+    role = payload.get("role")
+
+    if role == "CareTaker":
+        if not patient_id:
+            raise HTTPException(status_code=400, detail="patient_id is required for CareTaker")
+        target_pid = require_caretaker_patient(payload, patient_id)
+    else:
+        target_pid = authenticated_patient_id(payload)
+
+    return get_patient_memories(target_pid, status="PENDING_VALIDATION", limit=limit)
+
+
+@memories_router.post("/{memory_id}/approve")
+def approve_memory(memory_id: str, request: Request):
+    """Caregiver or authorized patient approves a pending memory into ACTIVE status."""
+    from datetime import datetime, timezone
+    from agent import vectorstore
+
+    payload = get_auth_payload(request)
+    role = payload.get("role")
+
+    res = supabase.table("memories").select("*").eq("id", memory_id).execute()
+    if not res.data:
+        raise HTTPException(status_code=404, detail="Memory not found")
+    mem = res.data[0]
+    pid = mem["patient_id"]
+
+    if role == "CareTaker":
+        require_caretaker_patient(payload, pid)
+    else:
+        require_patient_ownership(payload, pid)
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    meta = mem.get("metadata") or {}
+    conflict_with_id = meta.get("conflict_with") or meta.get("supersedes_id")
+
+    # If this was an update to an existing memory, archive the old one
+    if conflict_with_id:
+        try:
+            supabase.table("memories").update({
+                "status": "ARCHIVED",
+                "updated_at": now_iso,
+                "metadata": {
+                    "superseded_by": memory_id,
+                    "archived_at": now_iso,
+                },
+            }).eq("id", conflict_with_id).execute()
+            vectorstore.delete_memory_vector(pid, conflict_with_id)
+        except Exception:
+            pass
+
+    # Activate memory
+    supabase.table("memories").update({
+        "status": "ACTIVE",
+        "last_confirmed_at": now_iso,
+        "updated_at": now_iso,
+        "metadata": {
+            **meta,
+            "approved_at": now_iso,
+            "approved_by": role,
+            "vector_synced": True,
+        },
+    }).eq("id", memory_id).execute()
+
+    vectorstore.upsert_memory_vector(
+        patient_id=pid,
+        memory_id=memory_id,
+        text=f"{mem.get('title')}. {mem.get('content')}",
+        memory_type=mem.get("memory_type", "IMPORTANT_FACT"),
+        status="ACTIVE",
+    )
+    return {"message": "Memory approved successfully", "memory_id": memory_id, "status": "ACTIVE"}
+
+
+@memories_router.post("/{memory_id}/reject")
+def reject_memory(memory_id: str, request: Request):
+    """Caregiver or authorized patient rejects a pending memory."""
+    from datetime import datetime, timezone
+    from agent import vectorstore
+
+    payload = get_auth_payload(request)
+    role = payload.get("role")
+
+    res = supabase.table("memories").select("*").eq("id", memory_id).execute()
+    if not res.data:
+        raise HTTPException(status_code=404, detail="Memory not found")
+    mem = res.data[0]
+    pid = mem["patient_id"]
+
+    if role == "CareTaker":
+        require_caretaker_patient(payload, pid)
+    else:
+        require_patient_ownership(payload, pid)
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    meta = mem.get("metadata") or {}
+
+    supabase.table("memories").update({
+        "status": "REJECTED",
+        "updated_at": now_iso,
+        "metadata": {
+            **meta,
+            "rejected_at": now_iso,
+            "rejected_by": role,
+        },
+    }).eq("id", memory_id).execute()
+
+    vectorstore.delete_memory_vector(pid, memory_id)
+    return {"message": "Memory rejected", "memory_id": memory_id, "status": "REJECTED"}
+
+
+@memories_router.post("/{memory_id}/resolve-conflict")
+def resolve_conflict_endpoint(memory_id: str, data: ConflictResolveRequest, request: Request):
+    """Caregiver or authorized patient resolves a conflict between candidate and existing memory."""
+    payload = get_auth_payload(request)
+    role = payload.get("role")
+
+    res = supabase.table("memories").select("patient_id").eq("id", memory_id).execute()
+    if not res.data:
+        raise HTTPException(status_code=404, detail="Memory not found")
+    pid = res.data[0]["patient_id"]
+
+    if role == "CareTaker":
+        require_caretaker_patient(payload, pid)
+    else:
+        require_patient_ownership(payload, pid)
+
+    resolve_res = resolve_memory_conflict(
+        patient_id=pid,
+        candidate_memory_id=memory_id,
+        action=data.action,
+        edit_title=data.edit_title,
+        edit_content=data.edit_content,
+        resolver_role=role or "CareTaker",
+    )
+    if not resolve_res.get("success"):
+        raise HTTPException(status_code=400, detail=resolve_res.get("error", "Resolution failed"))
+    return resolve_res
+
+
+@memories_router.post("/reconcile")
+def reconcile_vectors(request: Request, patient_id: Optional[str] = None):
+    """Caregiver or background worker triggers reconciliation of ChromaDB with PostgreSQL."""
+    payload = get_auth_payload(request)
+    role = payload.get("role")
+
+    if role == "CareTaker":
+        target_pid = require_caretaker_patient(payload, patient_id) if patient_id else None
+    else:
+        target_pid = authenticated_patient_id(payload)
+
+    return reconcile_memory_vectors(patient_id=target_pid)

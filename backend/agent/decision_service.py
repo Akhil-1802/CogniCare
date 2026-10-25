@@ -44,6 +44,8 @@ class MemoryDecisionService:
         score_breakdown: ScoreBreakdown,
         reference_dt: Optional[datetime] = None,
         has_conflict: bool = False,
+        supersedes_id: Optional[str] = None,
+        duplicate_status: str = "NEW",
     ) -> MemoryDecisionResult:
         if reference_dt is None:
             reference_dt = datetime.now(timezone.utc)
@@ -134,16 +136,21 @@ class MemoryDecisionService:
         # Step 4: Status determination (confidence gate & conflict check)
         status: MemoryStatus = base_status
         requires_review = False
+        review_reason: Optional[str] = None
 
         if decision != "DISCARD":
             if not conf_gate_passed:
                 status = "PENDING_VALIDATION"
                 requires_review = True
+                review_reason = f"Confidence ({normalized_conf:.2f}) is below minimum threshold ({settings.MEMORY_MIN_CONFIDENCE:.2f})."
                 reason += f" Confidence ({normalized_conf:.2f}) is below minimum threshold ({settings.MEMORY_MIN_CONFIDENCE:.2f}). Marked PENDING_VALIDATION."
             elif has_conflict:
                 status = "PENDING_VALIDATION"
                 requires_review = True
+                review_reason = "Potential contradiction or conflict with existing memory detected. Marked for caregiver verification."
                 reason += " Potential conflict with existing memory detected. Marked PENDING_VALIDATION for caregiver review."
+            elif duplicate_status == "UPDATE_CANDIDATE" and supersedes_id:
+                reason += f" Update candidate superseding previous memory ({supersedes_id})."
 
         expires_at_str = expires_at_dt.isoformat() if expires_at_dt else None
 
@@ -155,9 +162,12 @@ class MemoryDecisionService:
             expires_at=expires_at_str,
             confidence_gate_passed=conf_gate_passed,
             requires_review=requires_review,
+            review_reason=review_reason,
             reason=reason,
             score_breakdown=score_breakdown,
             candidate=candidate,
+            supersedes_memory_id=supersedes_id if duplicate_status == "UPDATE_CANDIDATE" else None,
+            conflict_with_memory_id=supersedes_id if has_conflict else None,
         )
 
 

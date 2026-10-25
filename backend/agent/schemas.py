@@ -31,8 +31,14 @@ class ExtractedFactCandidate(BaseModel):
     importance_estimate: Optional[float] = Field(default=None, ge=0.0, le=100.0)
     usefulness_estimate: Optional[float] = Field(default=None, ge=0.0, le=100.0)
     persistence_estimate: Optional[float] = Field(default=None, ge=0.0, le=100.0)
+    novelty_estimate: Optional[float] = Field(default=None, ge=0.0, le=100.0)
     source_conversation_id: Optional[str] = None
     source_message_id: Optional[str] = None
+    source_document_id: Optional[str] = None
+    source_type: str = Field(default="conversation")  # conversation, document, caregiver, inferred
+    duplicate_status: Optional[str] = None  # NEW, DUPLICATE, UPDATE_CANDIDATE, CONFLICT
+    supersedes_id: Optional[str] = None
+    review_reason: Optional[str] = None
 
 
 class MultiCandidateExtractionResult(BaseModel):
@@ -47,6 +53,8 @@ class ScoreBreakdown(BaseModel):
     novelty: float = Field(..., ge=0.0, le=100.0)
     total_score: float = Field(..., ge=0.0, le=100.0)
     weights: Dict[str, float] = Field(default_factory=dict)
+    reasoning: Dict[str, str] = Field(default_factory=dict)
+    duplicate_status: str = Field(default="NEW")
 
 
 class MemoryDecisionResult(BaseModel):
@@ -57,9 +65,12 @@ class MemoryDecisionResult(BaseModel):
     expires_at: Optional[str] = None
     confidence_gate_passed: bool
     requires_review: bool
+    review_reason: Optional[str] = None
     reason: str
     score_breakdown: ScoreBreakdown
     candidate: ExtractedFactCandidate
+    supersedes_memory_id: Optional[str] = None
+    conflict_with_memory_id: Optional[str] = None
 
 
 class MemoryExtractionResult(BaseModel):

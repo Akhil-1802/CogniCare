@@ -66,7 +66,9 @@ def search_patient_memories(patient_id: str, query: str, k: int = 5):
             )
             by_id = {}
             for r in (res.data or []):
-                # Filter out expired memories
+                # Filter out expired or sub-confidence memories
+                if r.get("confidence") is not None and float(r.get("confidence")) < 0.70:
+                    continue
                 if r.get("expires_at"):
                     try:
                         exp_dt = datetime.fromisoformat(r["expires_at"].replace("Z", "+00:00"))
@@ -92,6 +94,8 @@ def search_patient_memories(patient_id: str, query: str, k: int = 5):
             q = (query or "").lower()
             keys = [w for w in q.split() if len(w) > 2][:8]
             for r in res:
+                if r.get("confidence") is not None and float(r.get("confidence")) < 0.70:
+                    continue
                 if r.get("expires_at"):
                     try:
                         exp_dt = datetime.fromisoformat(r["expires_at"].replace("Z", "+00:00"))

@@ -76,16 +76,28 @@ def _offline_extract_candidates(
 
     # 1. Family / Relationship / Person
     # E.g. "My daughter Emily is visiting me next Sunday" or "Emily is my daughter"
-    rel_match = re.search(r"my\s+(daughter|son|wife|husband|sister|brother|granddaughter|grandson|friend)\s+([A-Z][a-z]+)?", t, re.I)
-    name_match = re.search(r"\b(emily|sarah|john|michael|david|anna|mary)\b", t_lower)
+    inverted_rel = re.search(r"\b([A-Z][a-z]+)\s+is\s+my\s+(daughter|son|wife|husband|sister|brother|granddaughter|grandson|friend)\b", t, re.I)
+    rel_match = re.search(r"my\s+(daughter|son|wife|husband|sister|brother|granddaughter|grandson|friend)(?:\s+named|\s+called|\s+is)?\s+([A-Z][a-z]+)?", t, re.I)
+    name_match = re.search(r"\b(emily|sarah|john|michael|david|anna|mary|robert|linda)\b", t_lower)
+    
     person_name = None
-    if rel_match and rel_match.group(2):
-        person_name = rel_match.group(2).strip()
+    stopwords = {"and", "is", "was", "who", "called", "she", "he", "it", "to", "in", "at", "for", "lives", "moved", "has"}
+
+    if inverted_rel:
+        person_name = inverted_rel.group(1).capitalize()
+        kin = inverted_rel.group(2).lower()
+    elif rel_match and rel_match.group(2) and rel_match.group(2).lower() not in stopwords:
+        person_name = rel_match.group(2).strip().capitalize()
+        kin = rel_match.group(1).lower()
+    elif rel_match:
+        kin = rel_match.group(1).lower()
+        if name_match:
+            person_name = name_match.group(1).capitalize()
     elif name_match:
         person_name = name_match.group(1).capitalize()
-
-    # Split compound phrases by "and", "also", comma or semicolon if multiple distinct topics
-    parts = re.split(r"\band\b|;|\. ", t)
+        kin = "family member"
+    else:
+        kin = None
 
     # Fact 1: Visit / Event
     if "visit" in t_lower or "coming" in t_lower or "sunday" in t_lower or "tomorrow" in t_lower:
@@ -112,8 +124,7 @@ def _offline_extract_candidates(
         ))
 
     # Fact 2: Relationship explicit ("Emily is my daughter")
-    if rel_match and not any(c.memory_type in ("EVENT", "RELATIONSHIP", "PERSON") and "visit" in c.title.lower() for c in candidates):
-        kin = rel_match.group(1).lower()
+    if kin and (inverted_rel or (rel_match and not any(c.memory_type == "EVENT" and "visit" in c.title.lower() for c in candidates)) or ("daughter" in t_lower or "son" in t_lower or "wife" in t_lower or "husband" in t_lower)):
         candidates.append(ExtractedFactCandidate(
             title=f"Relationship: {person_name or kin.capitalize()}",
             content=f"{person_name or 'The person'} is the patient's {kin}.",
@@ -165,7 +176,8 @@ def _offline_extract_candidates(
         ))
 
     # Fact 5: Medicine
-    if ("medicine" in t_lower or "tablet" in t_lower or "pill" in t_lower or "prescription" in t_lower) and not any(c.memory_type == "MEDICINE" for c in candidates):
+    has_med_words = any(m in t_lower for m in ("medicine", "tablet", "pill", "prescription", "metformin", "aspirin", "insulin", "dose", "dosage")) or bool(re.search(r"\b\d+\s*(?:mg|ml|mcg|tablets?|pills?)\b", t_lower))
+    if has_med_words and not any(c.memory_type == "MEDICINE" for c in candidates):
         candidates.append(ExtractedFactCandidate(
             title="Medicine information",
             content=t[:500],
@@ -178,18 +190,24 @@ def _offline_extract_candidates(
             persistence_estimate=50.0,
         ))
 
-    # Fact 6: General Important Fact / Remember
-    if "remember" in t_lower and len(candidates) == 0 and len(t) > 15:
+    # Fact 6: General Important Fact / Blood type / Allergy / Remember
+    has_fact_words = any(k in t_lower for k in ("blood type", "blood group", "allergic", "allergy", "born in", "live in", "living in", "remember"))
+    if has_fact_words and not any(c.memory_type == "IMPORTANT_FACT" for c in candidates):
+        fact_title = "Important personal fact"
+        if "blood" in t_lower:
+            fact_title = "Blood type record"
+        elif "allergic" in t_lower or "allergy" in t_lower:
+            fact_title = "Allergy record"
         candidates.append(ExtractedFactCandidate(
-            title="Patient requested to remember",
+            title=fact_title,
             content=t[:500],
             memory_type="IMPORTANT_FACT",
-            entities=[],
+            entities=["Medical/Personal Fact"],
             confidence=round(base_conf, 2),
             requires_confirmation=requires_conf,
-            importance_estimate=70.0,
-            usefulness_estimate=75.0,
-            persistence_estimate=60.0,
+            importance_estimate=85.0,
+            usefulness_estimate=85.0,
+            persistence_estimate=75.0,
         ))
 
     return candidates
