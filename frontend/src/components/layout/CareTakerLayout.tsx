@@ -205,13 +205,16 @@ export function CareTakerLayout({ children }: CareTakerLayoutProps) {
 
       {/* Main Content */}
       <main className="lg:pl-64">
-        <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-6xl px-4 pt-4 pb-28 sm:px-6 sm:py-6 lg:px-8">
           {children}
         </div>
       </main>
 
       {/* Mobile Bottom Nav */}
-      <nav className="fixed bottom-0 left-0 right-0 z-30 border-t border-slate-100 bg-white/90 backdrop-blur-md lg:hidden">
+      <nav
+        className="fixed bottom-0 left-0 right-0 z-30 border-t border-slate-100 bg-white/95 backdrop-blur-md lg:hidden"
+        style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
+      >
         <div className="flex items-center justify-around py-2">
           {navItems.slice(0, 5).map(({ path, icon: Icon, label }) => {
             const isActive = location.pathname === path;

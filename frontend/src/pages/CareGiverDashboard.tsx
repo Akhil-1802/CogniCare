@@ -168,20 +168,20 @@ export default function CareTakerDashboard() {
               </Badge>
             </div>
 
-            <div className="mt-6 grid grid-cols-3 gap-4">
-              <div className="rounded-xl bg-white/10 p-4 backdrop-blur-sm">
-                <p className="text-2xl font-bold">{patients.length}</p>
-                <p className="mt-1 text-xs text-sky-100">Total Patients</p>
+            <div className="mt-5 sm:mt-6 grid grid-cols-3 gap-2 sm:gap-4">
+              <div className="rounded-xl bg-white/10 p-3 sm:p-4 backdrop-blur-sm text-center sm:text-left">
+                <p className="text-xl sm:text-2xl font-bold">{patients.length}</p>
+                <p className="mt-0.5 sm:mt-1 text-[10px] sm:text-xs text-sky-100 truncate">Total Patients</p>
               </div>
 
-              <div className="rounded-xl bg-white/10 p-4 backdrop-blur-sm">
-                <p className="text-2xl font-bold">{remindersToday}</p>
-                <p className="mt-1 text-xs text-sky-100">Reminders Today</p>
+              <div className="rounded-xl bg-white/10 p-3 sm:p-4 backdrop-blur-sm text-center sm:text-left">
+                <p className="text-xl sm:text-2xl font-bold">{remindersToday}</p>
+                <p className="mt-0.5 sm:mt-1 text-[10px] sm:text-xs text-sky-100 truncate">Reminders Today</p>
               </div>
 
-              <div className="rounded-xl bg-white/10 p-4 backdrop-blur-sm">
-                <p className="text-2xl font-bold">{remindersDoneToday}</p>
-                <p className="mt-1 text-xs text-sky-100">Fulfilled Today</p>
+              <div className="rounded-xl bg-white/10 p-3 sm:p-4 backdrop-blur-sm text-center sm:text-left">
+                <p className="text-xl sm:text-2xl font-bold">{remindersDoneToday}</p>
+                <p className="mt-0.5 sm:mt-1 text-[10px] sm:text-xs text-sky-100 truncate">Fulfilled Today</p>
               </div>
             </div>
           </CardContent>

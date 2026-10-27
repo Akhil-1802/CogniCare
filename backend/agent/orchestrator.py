@@ -34,6 +34,7 @@ Available backend tools (you can request any subset, or NONE for pure chit-chat)
 - search_patient_documents: search the patient's documents.
 - save_to_routine: save an appointment, medicine, or day-to-day routine activity (doctor visit, dentist, walk, exercise, pills) to the patient's routine.
 - create_reminder: create a reminder when the patient explicitly asks to be reminded.
+- web_search: search the web for general Alzheimer's, dementia, memory care, or health questions not found in patient records.
 """
 
 PLANNER_PROMPT = """You route a patient message to backend tools.
@@ -49,6 +50,7 @@ Rules:
 - For medicines/appointments/reminders/documents questions → pick only the relevant tools.
 - For daily routine, schedule, or day-to-day activities questions ("what's my appointment today", "what is my routine today", "what do I do today") → pick relevant tools (e.g. ["get_upcoming_appointments", "get_patient_routine", "get_today_medicines"]).
 - For personal belongings (wallet, keys, glasses, items, where is...), people, past discussions, or memories → pick ["search_patient_memories"] with memory_query set to the item or topic.
+- For general questions about Alzheimer's disease, dementia, memory loss, caregiving tips, symptoms, treatments, medications, brain health, or any health/medical topic NOT specific to the patient's own records → pick ["web_search"] with memory_query set to the search query.
 - ROUTINE & APPOINTMENT SAVING: When the patient states, mentions, or asks to save an appointment (e.g. "what's my appointment today? It's Dr. Smith at 3pm", "I have a doctor appointment today at 4pm", "dentist tomorrow at 10am") or a day-to-day routine activity (e.g. "morning walk at 7am", "take medicine at 8pm", "remind me to..."), set save_to_routine:
   {{"title": "Appointment with Dr. Smith", "type": "appointment"|"medicine"|"general", "reminder_date": "YYYY-MM-DD", "reminder_time": "HH:MM", "dosage": null, "notes": "..."}}
 Examples:
@@ -59,6 +61,9 @@ Examples:
 - "I have a doctor appointment today at 3pm with Dr. Smith" → {{"tools": ["get_upcoming_appointments"], "reminders_date": "{today}", "memory_query": null, "save_to_routine": {{"title": "Appointment with Dr. Smith", "type": "appointment", "reminder_date": "{today}", "reminder_time": "15:00", "dosage": null, "notes": "Doctor appointment"}}}}
 - "What medicine do I take tonight?" → {{"tools": ["get_today_medicines"], "reminders_date": null, "memory_query": null, "save_to_routine": null}}
 - "Who is Emily?" → {{"tools": ["search_patient_memories"], "reminders_date": null, "memory_query": "Who is Emily?", "save_to_routine": null}}
+- "What are the symptoms of Alzheimer's?" → {{"tools": ["web_search"], "reminders_date": null, "memory_query": "symptoms of Alzheimer's disease", "save_to_routine": null}}
+- "How can I improve my memory?" → {{"tools": ["web_search"], "reminders_date": null, "memory_query": "how to improve memory for Alzheimer's patients", "save_to_routine": null}}
+- "What is dementia?" → {{"tools": ["web_search"], "reminders_date": null, "memory_query": "what is dementia", "save_to_routine": null}}
 JSON:"""
 
 ANSWER_PROMPT = """{system}
@@ -200,6 +205,15 @@ def _format_documents(rows) -> str:
     return "Medical documents & prescriptions: " + " | ".join(items)
 
 
+def _format_web_results(rows) -> str:
+    if not rows:
+        return "No web results found."
+    parts = []
+    for r in rows[:4]:
+        parts.append(f"[{r.get('title','')}] {r.get('snippet','')}")
+    return "Web search results (trusted health sources): " + " | ".join(parts)
+
+
 def _parse_json(text: str) -> dict:
     start, end = text.find("{"), text.rfind("}")
     if start == -1 or end == -1:
@@ -247,7 +261,8 @@ def _llm_plan(message: str, history: list) -> dict:
     plan = _parse_json(getattr(resp, "content", "") or "")
     raw_tools = plan.get("tools") or []
     allowed = {"get_today_medicines", "get_upcoming_appointments", "get_patient_reminders",
-               "get_patient_routine", "search_patient_memories", "search_patient_documents"}
+               "get_patient_routine", "search_patient_memories", "search_patient_documents",
+               "web_search"}
     tools = [t for t in raw_tools if t in allowed][:4]
     plan["tools"] = tools
     return plan
@@ -575,6 +590,9 @@ class AgentOrchestrator:
                 elif name == "search_patient_memories":
                     ctx["memories"] = tools_impl.search_patient_memories(
                         patient_id, plan.get("memory_query") or message)
+                elif name == "web_search":
+                    ctx["web_results"] = tools_impl.web_search(
+                        plan.get("memory_query") or message)
                 tools_used.append({"tool_name": name, "success": True})
             except Exception as e:
                 tools_used.append({"tool_name": name, "success": False, "detail": str(e)[:200]})
@@ -620,6 +638,8 @@ class AgentOrchestrator:
             context_parts.append(_format_memories(ctx.get("memories", [])))
         if "documents" in ctx:
             context_parts.append(_format_documents(ctx.get("documents", [])))
+        if "web_results" in ctx:
+            context_parts.append(_format_web_results(ctx.get("web_results", [])))
         context_text = "\n".join(context_parts) if context_parts else "(No records lookup needed for this message — reply as a natural conversational companion.)"
         try:
             answer = _llm_answer(SYSTEM_PROMPT, context_text, history, message)
@@ -703,6 +723,8 @@ class AgentOrchestrator:
             sources.append("Reminders")
         if ctx.get("memories"):
             sources.append("Long-term memory")
+        if ctx.get("web_results"):
+            sources.append("Web (health sources)")
 
         from agent.llm import model_info
 

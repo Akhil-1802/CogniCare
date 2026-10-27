@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">CogniCare</string>
+    <string name="title_activity_main">CogniCare</string>
+    <string name="package_name">com.cognicare.app</string>
+    <string name="custom_url_scheme">com.cognicare.app</string>
+</resources>

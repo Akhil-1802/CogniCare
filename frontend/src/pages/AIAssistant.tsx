@@ -1,6 +1,8 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
+import { useLocation, Link } from "react-router-dom";
+import { useVoiceCommand } from "@/hooks/useVoiceCommand";
 import { motion, AnimatePresence } from "framer-motion";
-import { Link } from "react-router-dom";
+import { cn } from "@/lib/utils";
 import {
   Send,
   Mic,
@@ -11,7 +13,6 @@ import {
   Bell,
   CheckCircle2,
   Paperclip,
-  Image as ImageIcon,
   FileText,
   Pill,
   AlertTriangle,
@@ -54,6 +55,7 @@ const TOOL_FRIENDLY: Record<string, string> = {
   search_patient_memories: "memories",
   search_patient_documents: "medical documents",
   create_reminder: "reminder creation",
+  web_search: "web (health sources)",
 };
 
 const DISCLAIMER =
@@ -75,6 +77,30 @@ export default function AIAssistant() {
   const [status, setStatus] = useState("");
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [answeredAlert, setAnsweredAlert] = useState<NotificationItem | null>(null);
+  const location = useLocation();
+
+  const handleVoiceTranscript = useCallback((text: string) => {
+    setInput("");
+    sendMessage(text);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleVoiceInterim = useCallback((text: string) => {
+    setInput(text);
+  }, []);
+
+  const { listening: voiceListening, supported: voiceSupported, start: startVoice, stop: stopVoice } =
+    useVoiceCommand("chat", handleVoiceTranscript, handleVoiceInterim);
+
+  // Auto-send voice message navigated from global mic
+  useEffect(() => {
+    const vm = (location.state as { voiceMessage?: string } | null)?.voiceMessage;
+    if (vm) {
+      window.history.replaceState({}, "");
+      sendMessage(vm);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // File upload state
   const [attachedFile, setAttachedFile] = useState<File | null>(null);
@@ -610,10 +636,14 @@ export default function AIAssistant() {
               <Button
                 variant="outline"
                 size="icon"
-                className="shrink-0 rounded-xl hidden sm:flex"
-                title="Voice input (UI only)"
+                onClick={voiceSupported ? (voiceListening ? stopVoice : startVoice) : undefined}
+                className={cn(
+                  "shrink-0 rounded-xl flex",
+                  voiceListening && "bg-red-50 border-red-300 animate-pulse"
+                )}
+                title={voiceListening ? "Stop listening" : "Voice input"}
               >
-                <Mic className="h-4 w-4 text-sky-600" />
+                <Mic className={cn("h-4 w-4", voiceListening ? "text-red-500" : "text-sky-600")} />
               </Button>
               <Textarea
                 value={input}
@@ -625,7 +655,9 @@ export default function AIAssistant() {
                   }
                 }}
                 placeholder={
-                  attachedFile
+                  voiceListening
+                    ? "🎤 Listening… speak now"
+                    : attachedFile
                     ? "Add a question about this medicine (e.g., 'Should I take this?') or press Send..."
                     : "Ask about medicines, doctors, or attach a photo of your pill..."
                 }

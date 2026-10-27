@@ -1,0 +1,20 @@
+{
+  "name": "CogniCare – AI Cognitive Assistant",
+  "short_name": "CogniCare",
+  "description": "AI-powered cognitive memory assistant for MCI and Alzheimer's care",
+  "start_url": "/",
+  "id": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f8fafc",
+  "theme_color": "#0284c7",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["medical", "health", "lifestyle"]
+}

@@ -251,6 +251,40 @@ def save_to_routine(patient_id: str, data: dict):
     return create_reminder(patient_id, clean_data)
 
 
+def web_search(query: str, max_results: int = 4) -> list[dict]:
+    """Search DuckDuckGo for Alzheimer's / dementia / general health questions.
+    Returns a list of {title, snippet, url} dicts. No API key required."""
+    import httpx
+    from bs4 import BeautifulSoup
+
+    safe_query = f"{query} alzheimer dementia site:nia.nih.gov OR site:alz.org OR site:who.int OR site:mayoclinic.org OR site:healthline.com"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36"
+    }
+    try:
+        resp = httpx.get(
+            "https://html.duckduckgo.com/html/",
+            params={"q": safe_query},
+            headers=headers,
+            timeout=8,
+            follow_redirects=True,
+        )
+        soup = BeautifulSoup(resp.text, "html.parser")
+        results = []
+        for result in soup.select(".result")[:max_results]:
+            title_el = result.select_one(".result__title")
+            snippet_el = result.select_one(".result__snippet")
+            url_el = result.select_one(".result__url")
+            title = title_el.get_text(strip=True) if title_el else ""
+            snippet = snippet_el.get_text(strip=True) if snippet_el else ""
+            url = url_el.get_text(strip=True) if url_el else ""
+            if title and snippet:
+                results.append({"title": title, "snippet": snippet, "url": url})
+        return results
+    except Exception:
+        return []
+
+
 # Tool registry exposed to the orchestrator (not directly to the LLM).
 TOOLS = {
     "get_today_medicines": get_today_medicines,
@@ -263,4 +297,5 @@ TOOLS = {
     "search_patient_documents": search_patient_documents,
     "get_document_details": get_document_details,
     "create_reminder": create_reminder,
+    "web_search": web_search,
 }

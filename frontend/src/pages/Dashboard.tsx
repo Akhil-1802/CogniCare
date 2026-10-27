@@ -266,17 +266,17 @@ export default function Dashboard() {
               Your cognitive memory assistant is ready to help you with your routine today.
             </p>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
             <Link
               to="/routine"
-              className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-sky-700"
+              className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-3.5 py-2 text-xs sm:px-4 sm:py-2.5 sm:text-sm font-medium text-white shadow-sm transition-colors hover:bg-sky-700"
             >
               <CalendarCheck className="h-4 w-4" />
               View Daily Routine
             </Link>
             <Link
               to="/engine"
-              className="inline-flex items-center gap-2 rounded-xl bg-sky-50 px-4 py-2.5 text-sm font-medium text-sky-700 transition-colors hover:bg-sky-100"
+              className="inline-flex items-center gap-2 rounded-xl bg-sky-50 px-3.5 py-2 text-xs sm:px-4 sm:py-2.5 sm:text-sm font-medium text-sky-700 transition-colors hover:bg-sky-100"
             >
               <Brain className="h-4 w-4" />
               Memory Engine
@@ -288,38 +288,38 @@ export default function Dashboard() {
       {/* Today's Summary */}
       <motion.div variants={item}>
         <Card className="overflow-hidden border-0 bg-gradient-to-br from-sky-600 to-blue-700 text-white shadow-[var(--shadow-elevated)]">
-          <CardContent className="p-6 sm:p-8">
+          <CardContent className="p-5 sm:p-8">
             <div className="flex items-start justify-between">
               <div>
                 <div className="flex items-center gap-2">
                   <Sparkles className="h-5 w-5 text-sky-200" />
-                  <h2 className="text-lg font-semibold">Today&apos;s Summary</h2>
+                  <h2 className="text-base sm:text-lg font-semibold">Today&apos;s Summary</h2>
                 </div>
-                <p className="mt-2 text-sky-100 text-sm">
+                <p className="mt-1 sm:mt-2 text-sky-100 text-xs sm:text-sm">
                   {routineTotal > 0
                     ? `${routineCompleted} of ${routineTotal} routine tasks completed today`
                     : "No routine tasks scheduled yet for today"}
                 </p>
               </div>
-              <Badge className="bg-white/20 text-white border-0 hover:bg-white/20">
+              <Badge className="bg-white/20 text-white border-0 hover:bg-white/20 text-xs">
                 {caretakerInfo?.name
                   ? `${caretakerInfo.name} (${caretakerInfo.status || "Active"})`
                   : "No CareTaker"}
               </Badge>
             </div>
 
-            <div className="mt-6 grid grid-cols-3 gap-4">
-              <div className="rounded-xl bg-white/10 p-4 backdrop-blur-sm">
-                <p className="text-2xl font-bold">{loadingMemories ? "—" : memories.length}</p>
-                <p className="text-xs text-sky-100 mt-1">Memories Stored</p>
+            <div className="mt-5 sm:mt-6 grid grid-cols-3 gap-2 sm:gap-4">
+              <div className="rounded-xl bg-white/10 p-3 sm:p-4 backdrop-blur-sm text-center sm:text-left">
+                <p className="text-xl sm:text-2xl font-bold">{loadingMemories ? "—" : memories.length}</p>
+                <p className="text-[10px] sm:text-xs text-sky-100 mt-0.5 sm:mt-1 truncate">Memories Stored</p>
               </div>
-              <div className="rounded-xl bg-white/10 p-4 backdrop-blur-sm">
-                <p className="text-2xl font-bold">{routineTotal}</p>
-                <p className="text-xs text-sky-100 mt-1">Routine Today</p>
+              <div className="rounded-xl bg-white/10 p-3 sm:p-4 backdrop-blur-sm text-center sm:text-left">
+                <p className="text-xl sm:text-2xl font-bold">{routineTotal}</p>
+                <p className="text-[10px] sm:text-xs text-sky-100 mt-0.5 sm:mt-1 truncate">Routine Today</p>
               </div>
-              <div className="rounded-xl bg-white/10 p-4 backdrop-blur-sm">
-                <p className="text-2xl font-bold">{routineCompleted}</p>
-                <p className="text-xs text-sky-100 mt-1">Tasks Completed</p>
+              <div className="rounded-xl bg-white/10 p-3 sm:p-4 backdrop-blur-sm text-center sm:text-left">
+                <p className="text-xl sm:text-2xl font-bold">{routineCompleted}</p>
+                <p className="text-[10px] sm:text-xs text-sky-100 mt-0.5 sm:mt-1 truncate">Tasks Done</p>
               </div>
             </div>
           </CardContent>

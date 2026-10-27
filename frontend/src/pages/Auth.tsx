@@ -16,6 +16,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
+import { API_BASE_URL } from "@/lib/api";
 
 interface RegisterForm {
   name: string;
@@ -84,7 +85,7 @@ export default function Auth() {
 
   const onVerify = async (data: VerifyForm) => {
     try {
-      const res = await fetch("http://localhost:8000/auth/verify-email", {
+      const res = await fetch(`${API_BASE_URL}/auth/verify-email`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
@@ -103,7 +104,7 @@ export default function Auth() {
 
   const onResend = async () => {
     try {
-      await fetch("http://localhost:8000/auth/resend-code", {
+      await fetch(`${API_BASE_URL}/auth/resend-code`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: pendingEmail }),
@@ -169,31 +170,31 @@ export default function Auth() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-sky-50 via-white to-blue-100 flex items-center justify-center px-6">
-      <div className="grid lg:grid-cols-2 max-w-6xl w-full gap-10 items-center">
-        <motion.div initial={{ opacity: 0, x: -30 }} animate={{ opacity: 1, x: 0 }}>
-          <div className="flex items-center gap-3 mb-6">
-            <div className="w-14 h-14 rounded-2xl bg-sky-500 flex items-center justify-center">
-              <HeartPulse className="text-white h-7 w-7" />
+    <div className="min-h-screen bg-gradient-to-br from-sky-50 via-white to-blue-100 flex items-center justify-center px-4 py-8 sm:px-6">
+      <div className="grid lg:grid-cols-2 max-w-6xl w-full gap-8 lg:gap-10 items-center">
+        <motion.div initial={{ opacity: 0, x: -30 }} animate={{ opacity: 1, x: 0 }} className="text-center lg:text-left">
+          <div className="flex items-center justify-center lg:justify-start gap-3 mb-4 sm:mb-6">
+            <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-sky-500 flex items-center justify-center shadow-sm">
+              <HeartPulse className="text-white h-6 w-6 sm:h-7 sm:w-7" />
             </div>
-            <div>
-              <h1 className="text-4xl font-bold text-slate-900">CogniCare</h1>
-              <p className="text-slate-500">AI Cognitive Memory Assistant</p>
+            <div className="text-left">
+              <h1 className="text-2xl sm:text-4xl font-bold text-slate-900">CogniCare</h1>
+              <p className="text-xs sm:text-sm text-slate-500">AI Cognitive Memory Assistant</p>
             </div>
           </div>
-          <h2 className="text-5xl font-bold text-slate-900 leading-tight">
+          <h2 className="text-2xl sm:text-4xl lg:text-5xl font-bold text-slate-900 leading-tight">
             Helping Patients
             <span className="text-sky-600"> Remember Better.</span>
           </h2>
-          <p className="mt-6 text-lg text-slate-600 max-w-lg">
+          <p className="mt-4 sm:mt-6 text-sm sm:text-lg text-slate-600 max-w-lg mx-auto lg:mx-0">
             Securely manage memories, medicine reminders and connect with
             CareTakers through AI-powered cognitive assistance.
           </p>
         </motion.div>
 
         <motion.div layout initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
-          <Card className="shadow-2xl border-0 rounded-3xl">
-            <CardContent className="p-10">
+          <Card className="shadow-2xl border-0 rounded-2xl sm:rounded-3xl">
+            <CardContent className="p-5 sm:p-10">
               <div className="flex bg-slate-100 rounded-xl p-1 mb-8">
                 <button
                   onClick={() => setIsLogin(true)}

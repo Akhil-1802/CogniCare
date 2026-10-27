@@ -1,5 +1,5 @@
 import { Link, useLocation } from "react-router-dom";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   LayoutDashboard,
   MessageSquare,
@@ -12,11 +12,14 @@ import {
   X,
   LogOut,
   CalendarCheck,
+  Mic,
+  MicOff,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
 import { getNotificationCounts } from "@/lib/notifications";
+import { useVoiceCommand } from "@/hooks/useVoiceCommand";
 
 const navItems = [
   { path: "/patientdashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -38,6 +41,7 @@ export function AppLayout({ children }: AppLayoutProps) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [unreadAnswers, setUnreadAnswers] = useState(0);
   const { user, logout } = useAuth();
+  const { listening, navFeedback, supported, start, stop } = useVoiceCommand("navigation");
 
   useEffect(() => {
     const fetchCounts = async () => {
@@ -193,13 +197,59 @@ export function AppLayout({ children }: AppLayoutProps) {
 
       {/* Main Content */}
       <main className="lg:pl-64">
-        <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-6xl px-4 pt-4 pb-28 sm:px-6 sm:py-6 lg:px-8">
           {children}
         </div>
       </main>
 
+      {/* Global Voice Command Button */}
+      {supported && (
+        <>
+          <button
+            onClick={listening ? stop : start}
+            className={cn(
+              "fixed bottom-20 right-4 z-50 flex h-14 w-14 items-center justify-center rounded-full shadow-lg transition-all lg:bottom-6 lg:right-6",
+              listening
+                ? "bg-red-500 hover:bg-red-600 animate-pulse"
+                : "bg-sky-600 hover:bg-sky-700"
+            )}
+            title={listening ? "Stop listening" : "Voice command"}
+          >
+            {listening ? (
+              <MicOff className="h-6 w-6 text-white" />
+            ) : (
+              <Mic className="h-6 w-6 text-white" />
+            )}
+          </button>
+          <AnimatePresence>
+            {navFeedback && (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 10 }}
+                className="fixed bottom-36 right-4 z-50 rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white shadow-lg lg:bottom-24"
+              >
+                {navFeedback}
+              </motion.div>
+            )}
+          </AnimatePresence>
+          {listening && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="fixed bottom-36 right-4 z-50 rounded-xl bg-red-600 px-4 py-2 text-sm font-medium text-white shadow-lg lg:bottom-24"
+            >
+              🎤 Listening…
+            </motion.div>
+          )}
+        </>
+      )}
+
       {/* Mobile Bottom Nav */}
-      <nav className="fixed bottom-0 left-0 right-0 z-30 border-t border-slate-100 bg-white/90 backdrop-blur-md lg:hidden">
+      <nav
+        className="fixed bottom-0 left-0 right-0 z-30 border-t border-slate-100 bg-white/95 backdrop-blur-md lg:hidden"
+        style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
+      >
         <div className="flex items-center justify-around py-2">
           {navItems.slice(0, 5).map(({ path, icon: Icon, label }) => {
             const isActive = location.pathname === path;
