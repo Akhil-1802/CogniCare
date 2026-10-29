@@ -13,12 +13,8 @@ export function getDefaultApiBaseUrl(): string {
     return process.env.EXPO_PUBLIC_API_URL;
   }
 
-  if (Platform.OS === "android") {
-    return "http://10.0.2.2:8000";
-  }
-
-  // iOS Simulator / Web
-  return "http://localhost:8000";
+  // Live 24/7 Render cloud backend
+  return "https://cognicare-qrmx.onrender.com";
 }
 
 let cachedBaseUrl: string | null = null;

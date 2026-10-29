@@ -254,13 +254,13 @@ export default function LoginScreen() {
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Backend Server URL</Text>
             <Text style={styles.modalSubtitle}>
-              For Android emulators, use 10.0.2.2:8000. For physical devices, enter your computer's local Wi-Fi IP (e.g. http://192.168.1.50:8000).
+              Connected to 24/7 cloud backend: https://cognicare-qrmx.onrender.com. You can change this if testing against a custom server.
             </Text>
 
             <Input
               value={serverUrl}
               onChangeText={setServerUrl}
-              placeholder="http://10.0.2.2:8000"
+              placeholder="https://cognicare-qrmx.onrender.com"
               autoCapitalize="none"
             />
 
