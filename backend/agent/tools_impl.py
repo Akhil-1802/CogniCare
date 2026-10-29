@@ -1,9 +1,44 @@
 """Backend tools. Every tool receives an already-authorized patient_id.
 The LLM never supplies patient_id and never touches the DB directly."""
+import os
+import re
 import uuid
 from datetime import datetime, timezone, date
+from config.settings import MEMORY_MAX_DISTANCE
 from db.supabase import supabase
 from agent import vectorstore
+
+# Relevance gate for long-term memory search. A nearest-neighbour hit is NOT
+# automatically an answer: a stored memory only counts as relevant when it
+# shares content words with the query ("wallet" ↔ "wallet") OR its cosine
+# distance is within MEMORY_MAX_DISTANCE. Without this, an unrelated memory
+# (e.g. an old appointment note) gets served for a completely different
+# question like "where is my wallet?".
+_STOPWORDS = frozenset("""
+the a an and or but if then so of to in on at for from by with as is are was were be
+been am i me my mine we our you your he she it its they them this that these those
+do does did done have has had will would shall should can could may might must not
+no yes what whats where wheres when why how who whom which whose about any some there
+here please just really like get got let know tell said say thing things something
+patient caretaker caregiver
+""".split())
+
+
+def _content_words(text: str) -> set:
+    """Meaningful words (length >= 3, not stopwords) used for relevance overlap."""
+    words = re.findall(r"[a-z0-9']+", (text or "").lower())
+    return {w.strip("'") for w in words if len(w.strip("'")) >= 3 and w.strip("'") not in _STOPWORDS}
+
+
+def _is_relevant_memory(row: dict, query: str, distance) -> bool:
+    """True when a stored memory genuinely relates to the query.
+    Lexical overlap OR a tight semantic distance — never 'nearest whatever'."""
+    if _content_words(query) & _content_words(f"{row.get('title', '')} {row.get('content', '')}"):
+        return True
+    try:
+        return distance is not None and float(distance) <= MEMORY_MAX_DISTANCE
+    except (TypeError, ValueError):
+        return False
 
 
 def _today() -> str:
@@ -48,11 +83,14 @@ def get_upcoming_appointments(patient_id: str, limit: int = 5):
 
 def search_patient_memories(patient_id: str, query: str, k: int = 5):
     """PostgreSQL source of truth + Chroma semantic ranking, strictly patient-scoped.
-    Only returns ACTIVE, unexpired memories."""
+    Only returns ACTIVE, unexpired memories that are actually RELEVANT to the
+    query (content-word overlap or tight cosine distance) — unrelated nearest
+    neighbours are dropped so callers can honestly report 'nothing found'."""
     from datetime import datetime, timezone
     now_dt = datetime.now(timezone.utc)
     hits = vectorstore.search_memory_vectors(patient_id, query, k=k * 2)
     ids = [h["memory_id"] for h in hits]
+    dist_by_id = {h.get("memory_id"): h.get("distance") for h in hits}
     rows: list = []
     if ids:
         try:
@@ -77,11 +115,15 @@ def search_patient_memories(patient_id: str, query: str, k: int = 5):
                     except Exception:
                         pass
                 by_id[r["id"]] = r
-            rows = [by_id[i] for i in ids if i in by_id][:k]
+            rows = [
+                by_id[i] for i in ids
+                if i in by_id and _is_relevant_memory(by_id[i], query, dist_by_id.get(i))
+            ][:k]
         except Exception:
             rows = []
     if not rows:
-        # Keyword fallback, always patient-scoped, ACTIVE, unexpired
+        # Keyword fallback, always patient-scoped, ACTIVE, unexpired —
+        # and held to the same relevance gate (shared content words).
         try:
             res = (
                 supabase.table("memories")
@@ -91,8 +133,6 @@ def search_patient_memories(patient_id: str, query: str, k: int = 5):
                 .limit(30)
                 .execute()
             ).data or []
-            q = (query or "").lower()
-            keys = [w for w in q.split() if len(w) > 2][:8]
             for r in res:
                 if r.get("confidence") is not None and float(r.get("confidence")) < 0.70:
                     continue
@@ -103,8 +143,7 @@ def search_patient_memories(patient_id: str, query: str, k: int = 5):
                             continue
                     except Exception:
                         pass
-                blob = f"{r.get('title','')} {r.get('content','')}".lower()
-                if any(k in blob for k in keys):
+                if _is_relevant_memory(r, query, None):
                     rows.append(r)
             rows = rows[:k]
         except Exception:

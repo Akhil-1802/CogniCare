@@ -25,6 +25,12 @@ COOKIE_SAMESITE = os.getenv("COOKIE_SAMESITE", "lax")
 
 # ---- CogniCare AI Assistant (fully dynamic via Mistral) ----
 CHAT_RETENTION_DAYS = int(os.getenv("CHAT_RETENTION_DAYS", "30"))
+# Memory retrieval relevance gate: max cosine distance (0 = identical) for a
+# stored memory to count as a semantic match. Measured with mistral-embed:
+# true matches (e.g. "where is my wallet?" ↔ wallet note) sit at ~0.24-0.26,
+# unrelated nearest neighbours at ~0.33+. Unrelated hits above this distance
+# are treated as "nothing found" instead of being served.
+MEMORY_MAX_DISTANCE = float(os.getenv("MEMORY_MAX_DISTANCE", "0.30"))
 CHAT_CLEANUP_ENABLED = os.getenv("CHAT_CLEANUP_ENABLED", "false").lower() == "true"
 
 # Single API key drives chat, tool routing, extraction, summaries and embeddings.

@@ -69,6 +69,8 @@ Recent chat:
 Patient: {message}
 How to answer:
 - If this is normal conversation (greeting, feelings, stories, general knowledge): reply naturally like a caring friend. Do NOT mention records or say "no records".
+- If the context above includes long-term memories that answer the patient's question (a belonging, a person, a past conversation), recall them warmly and naturally: "I remember you said..." — NEVER offer to ask the caretaker for something you already remember.
+- If the patient is telling you something to remember (where they kept an item, a personal fact), acknowledge it warmly — that needs no records and no caretaker offer.
 - If this is about the patient's own medicines, appointments, routine, reminders, documents, personal belongings (wallet, keys, glasses), or medical situation:
   - Answer gently and accurately from the records above.
   - IMPORTANT: If records are empty or do not contain the answer, say honestly that you don't have that information in their records, and ask: "I don't have that information in your records. Would you like me to ask your caretaker regarding this?" (or similar warm phrasing). Never fabricate details.
@@ -217,14 +219,30 @@ def _parse_json(text: str) -> dict:
 
 
 def _llm_plan(message: str, history: list) -> dict:
-    """Dynamic tool routing: fast Mistral planner decides tools every turn.
-    Returns [] for pure chit-chat so the agent talks normally.
-    On rate limit / transient failure, falls back to the offline router
-    so chat keeps working instead of 500ing."""
-    # Local shortcut: greetings never need an LLM planning call at all.
-    if _is_small_talk(message):
-        return {"tools": [], "reminders_date": None, "memory_query": None,
-                "create_reminder": None, "shortcut": "small_talk"}
+    """Tool routing. Well-understood messages (greetings, record questions,
+    personal-memory questions, memory declarations, explicit caregiver asks)
+    are decided DETERMINISTICALLY — no planner LLM call, no mis-routing.
+    Anything else (creation requests, mixed/ambiguous mentions) goes to the
+    fast Mistral planner; on rate limit / transient failure it falls back to
+    the offline router so chat keeps working instead of 500ing."""
+    intent = _classify_message_intent(message)
+    if intent is not None:
+        plan = {
+            "tools": list(_INTENT_ROUTES.get(intent, [])),
+            "reminders_date": None,
+            "memory_query": message if intent == "personal_memory" else None,
+            "create_reminder": None,
+            "save_to_routine": None,
+            "intent": intent,
+            "shortcut": "deterministic_intent_route",
+        }
+        if intent in ("appointment", "reminder", "routine"):
+            from datetime import timedelta
+            plan["reminders_date"] = (
+                date.today() + timedelta(days=1)
+                if "tomorrow" in _normalize_message(message) else date.today()
+            ).isoformat()
+        return plan
     try:
         from agent.llm import planner_llm
 
@@ -248,6 +266,7 @@ def _llm_plan(message: str, history: list) -> dict:
             "memory_query": message,
             "create_reminder": None,
             "fallback": "offline_router_rate_limited",
+            "intent": None,
         }
     plan = _parse_json(getattr(resp, "content", "") or "")
     raw_tools = plan.get("tools") or []
@@ -255,6 +274,7 @@ def _llm_plan(message: str, history: list) -> dict:
                "get_patient_routine", "search_patient_memories", "search_patient_documents"}
     tools = [t for t in raw_tools if t in allowed][:4]
     plan["tools"] = tools
+    plan.setdefault("intent", None)
     return plan
 
 
@@ -561,6 +581,17 @@ class AgentOrchestrator:
                 }
 
         plan = _llm_plan(message, history)
+        intent = plan.get("intent")
+
+        # Replies that must NOT go through the planner/answer LLM:
+        # - personal_declaration: the patient is TELLING us something to
+        #   remember → store it first, then confirm. Never a records lookup,
+        #   never a random "ask your caretaker?" offer.
+        # - caregiver: an explicit request → a guaranteed well-phrased offer
+        #   that plugs straight into the yes/no escalation flow.
+        if intent in ("personal_declaration", "caregiver"):
+            return self._direct_reply(patient_id, message, cid, patient_msg_id, intent, t0, logger)
+
         ctx: dict = {}
         tools_used: list[dict] = []
         for name in plan.get("tools", []):
@@ -626,18 +657,31 @@ class AgentOrchestrator:
         if "documents" in ctx:
             context_parts.append(_format_documents(ctx.get("documents", [])))
         context_text = "\n".join(context_parts) if context_parts else "(No records lookup needed for this message — reply as a natural conversational companion.)"
-        try:
-            answer = _llm_answer(SYSTEM_PROMPT, context_text, history, message)
-            rate_limited = False
-        except RuntimeError as e:
-            from agent.llm import is_rate_limit_error
 
-            if not is_rate_limit_error(e):
-                raise
-            # Rate-limited on the answer call → grounded template reply
-            # built from the live tool outputs already fetched above.
-            rate_limited = True
-            answer = _template_answer(message, ctx)
+        # Personal-memory lookup with NOTHING similar stored → honest miss plus
+        # a real next step (offer to ask the caretaker). The phrase below is
+        # what arms the yes/no escalation flow on the following turn — we never
+        # serve an unrelated memory or a random suggestion instead.
+        memory_lookup = intent == "personal_memory" or (
+            intent is None and "search_patient_memories" in plan.get("tools", [])
+        )
+        non_memory_ctx = {k: v for k, v in ctx.items() if k != "memories"}
+        if memory_lookup and not ctx.get("memories") and not non_memory_ctx:
+            answer = _memory_miss_reply()
+            rate_limited = False
+        else:
+            try:
+                answer = _llm_answer(SYSTEM_PROMPT, context_text, history, message)
+                rate_limited = False
+            except RuntimeError as e:
+                from agent.llm import is_rate_limit_error
+
+                if not is_rate_limit_error(e):
+                    raise
+                # Rate-limited on the answer call → grounded template reply
+                # built from the live tool outputs already fetched above.
+                rate_limited = True
+                answer = _template_answer(message, ctx)
         if created_row is not None:
             r_type = created_row.get("type", "general")
             type_label = "appointment" if r_type == "appointment" else ("medicine" if r_type == "medicine" else "routine task")
@@ -735,6 +779,80 @@ class AgentOrchestrator:
             "latency_ms": total_ms,
         }
 
+    def _direct_reply(self, patient_id: str, message: str, cid: str,
+                      patient_msg_id: str, intent: str, t0, logger) -> dict:
+        """Deterministic reply for intents that must never reach the planner or
+        the answer LLM: memory declarations (store + confirm) and explicit
+        caregiver asks (guaranteed well-phrased offer for the yes/no flow)."""
+        import threading
+        import time as _time
+
+        if intent == "caregiver":
+            answer = "Of course — would you like me to ask your caretaker about that now?"
+            sources: list = []
+            tools_used = ["offer_caretaker_escalation"]
+            mem_results: list = []
+        else:
+            # Understand → STORE the fact first, then confirm what was saved.
+            mem_results, saved_content = _store_declaration(
+                patient_id, message, cid, patient_msg_id)
+            if saved_content:
+                answer = (f"Thank you for telling me! I've saved this to my memory: "
+                          f"'{saved_content}' I'll remember it.")
+                sources = ["Long-term memory"]
+            else:
+                # Never claim a save that didn't happen — and still no random offer.
+                answer = "Thank you for letting me know — I'll keep that in mind."
+                sources = []
+            tools_used = ["save_to_memory"]
+
+        _store_message(cid, "TOOL", "; ".join(tools_used),
+                       tool_name="+".join(tools_used),
+                       metadata={"tools": [{"tool_name": t, "success": True} for t in tools_used],
+                                 "plan": {"intent": intent, "shortcut": "deterministic_intent_route"}})
+        should_suggest_escalation = (
+            "ask your caretaker" in answer.lower()
+            or "ask the caretaker" in answer.lower()
+        )
+        _store_message(cid, "ASSISTANT", answer, metadata={
+            "sources": sources,
+            "suggest_caretaker_escalation": should_suggest_escalation,
+            "escalation_question": message if should_suggest_escalation else None,
+        })
+
+        # Memory extraction already ran above — only the daily summary is left.
+        try:
+            threading.Thread(
+                target=_llm_update_daily_summary,
+                args=(patient_id, date.today().isoformat(), message[:120], answer[:200]),
+                daemon=True,
+            ).start()
+        except Exception:
+            pass
+
+        mem_result = (
+            mem_results[0] if len(mem_results) == 1
+            else ({"candidates": mem_results} if mem_results else {"created": False})
+        )
+        from agent.llm import model_info
+
+        total_ms = int((_time.perf_counter() - t0) * 1000)
+        logger.info("chat(direct intent=%s patient=%s) ms=%d", intent, patient_id, total_ms)
+        return {
+            "conversation_id": cid,
+            "response": answer,
+            "tools_used": tools_used,
+            "sources": sources,
+            "memory": mem_result,
+            "routine_saved": None,
+            "suggest_caretaker_escalation": should_suggest_escalation,
+            "escalation_question": message if should_suggest_escalation else None,
+            "disclaimer": DISCLAIMER,
+            "model": model_info(),
+            "rate_limited": False,
+            "latency_ms": total_ms,
+        }
+
 
 orchestrator = AgentOrchestrator()
 
@@ -749,6 +867,228 @@ def _is_small_talk(message: str) -> bool:
     if len(t) < 30 and (t in _GREETINGS or any(t.startswith(g) and len(t) <= len(g) + 3 for g in _GREETINGS)):
         return True
     return False
+
+
+# ---- Deterministic message understanding -----------------------------------
+# What the patient MEANS is decided here first (fast, testable, no LLM):
+# a statement to remember ≠ a question to answer ≠ a records lookup.
+
+_QUESTION_START_RE = re.compile(
+    r"^(what|where|who|whom|whose|when|why|how|which|is|are|was|were|am|do|does|did|"
+    r"can|could|would|will|shall|should|may|tell|show|list|any|name|give|did)\b"
+)
+
+# Words that belong to health/schedule record flows — a statement containing
+# these is never a plain memory declaration (appointments, medicines, saves).
+_RECORD_WORD_RE = re.compile(
+    r"\b(appointments?|dentist|clinic|hospital|checkup|check-ups?|doctor|doctors|"
+    r"medicines?|medications?|pills?|tablets?|doses?|dosage|prescriptions?|capsules?|"
+    r"reminders?|routines?|schedules?|reports?|documents?)\b"
+)
+_RECORD_ITEM_WORDS = frozenset({
+    "medicine", "medication", "pill", "pills", "tablet", "tablets", "appointment",
+    "appointments", "reminder", "reminders", "routine", "schedule", "schedules",
+    "report", "reports", "document", "documents", "doctor", "dentist", "dose",
+    "dosage", "prescription",
+})
+
+# "i forgot where i kept my wallet" is a LOOKUP, not a new fact to store.
+_FORGOTTEN_RE = re.compile(
+    r"\b(forgot|forget(?:ting)?|can(?:not|'t) remember|do not remember|do not recall|"
+    r"where (?:did|do) i|did i (?:keep|leave|put|place)|am i)\b"
+)
+# Explicit "remember/note that ..." instructions.
+_REMEMBER_RE = re.compile(r"\b(remember|note that|keep in mind|do not forget|never forget)\b")
+# "placed/put/kept/left ... my ..." — patient declaring where an item is.
+_PLACE_VERB_RE = re.compile(r"\b(?:placed|place|put|kept|keep|left|stored|store|stashed|stash)\b[^.?!]{0,60}\bmy\b")
+# "my wallet is in the kitchen" — possessive + location statement.
+_LOCATION_COPULA_RE = re.compile(
+    r"\bmy\b[^.?!]{0,40}\b(?:is|are|was|were)\s+(?:in|on|at|under|near|inside|next to|behind|beside)\b"
+)
+# Classic personal facts worth storing verbatim.
+_PERSONAL_FACT_RE = re.compile(
+    r"\bmy (name|blood (?:group|type)|date of birth|dob|birthday|address|phone number|allergies)\b"
+)
+_BELONGING_RE = re.compile(
+    r"\b(wallet|keys?|glasses|spectacles|phone|bag|purse|watch|dentures|hearing aid|"
+    r"walking stick|stick|card|cash|money|lunchbox)\b"
+)
+
+
+def _normalize_message(message: str) -> str:
+    """Lowercase, collapse whitespace, repair common contractions/typos so
+    'Where's is my wallet?' / 'wheres my wallet?' classify like 'where is my wallet?'."""
+    t = re.sub(r"\s+", " ", (message or "").strip().lower())
+    t = re.sub(r"\b(what|where|who|when|why|how|there)'?s\b", r"\1 is", t)
+    t = re.sub(r"\bi'?m\b", "i am", t)
+    t = re.sub(r"\bdon'?t\b", "do not", t)
+    # fixes the "where's is …" → "where is is …" artefact of the repair above
+    t = re.sub(r"\b(is|are|do|does|did|was|were) \1\b", r"\1", t)
+    return t
+
+
+def _is_question(text: str) -> bool:
+    t = (text or "").strip()
+    if t.endswith("?"):
+        return True
+    return bool(_QUESTION_START_RE.match(t))
+
+
+def _is_personal_declaration(text: str) -> bool:
+    """True when the patient is TELLING us something to remember — a statement,
+    not a question: 'i have placed my wallet at my kitchen slab.'"""
+    if not text or _is_question(text):
+        return False
+    # Uncertainty about remembering is a lookup request, not a new fact.
+    if _FORGOTTEN_RE.search(text):
+        return False
+    # Health/schedule statements belong to the records & routine flows.
+    if _RECORD_WORD_RE.search(text):
+        return False
+    if _REMEMBER_RE.search(text):
+        return True
+    if _PERSONAL_FACT_RE.search(text):
+        return True
+    if _PLACE_VERB_RE.search(text):
+        return True
+    if _BELONGING_RE.search(text) and _LOCATION_COPULA_RE.search(text):
+        return True
+    return False
+
+
+def _is_personal_memory_question(text: str) -> bool:
+    """Questions about the patient's own belongings, people, or past talks —
+    these are answered from long-term memories (never from health records)."""
+    m = re.search(r"\bwhere (?:is|are) my (\w+)", text)
+    if m and m.group(1) not in _RECORD_ITEM_WORDS:
+        return True
+    patterns = (
+        r"\bwhere did i (?:keep|leave|put|place|store) my\b",
+        r"\btell me where my\b",
+        r"\bwho (?:is|are) my\b",
+        r"\bwhat (?:did|have) i (?:tell|say|mention|share|inform)\b",
+        r"\bwhat (?:did|do) we (?:talk|discuss|say|chat|cover|speak)\b",
+        r"\bwhat did (?:you|we) (?:talk|discuss|say) about\b",
+        r"\bwhat do (?:you )?remember about\b",
+        r"\bdo (?:you|u) remember\b",
+        r"\bwhat (?:is|was) my \w+(?:'s)? (name|birthday|address|phone number|preference|favourite|favorite)\b",
+        r"\bwhat(?:'s| is| was) my (daughter|son|wife|husband|sister|brother|friend|doctor|family)\b",
+    )
+    return any(re.search(p, text) for p in patterns)
+
+
+_INTENT_ROUTES: dict = {
+    "general": [],
+    "personal_declaration": [],
+    "personal_memory": ["search_patient_memories"],
+    "medicine": ["get_today_medicines"],
+    "appointment": ["get_upcoming_appointments", "get_patient_routine"],
+    "reminder": ["get_patient_reminders"],
+    "routine": ["get_patient_routine"],
+    "documents": ["search_patient_documents"],
+    "caregiver": [],
+}
+
+
+def _classify_message_intent(message: str) -> str | None:
+    """Deterministic 'what does the patient mean' router for common intents.
+    Returns None when the message should go to the LLM planner (creation
+    requests like "remind me to …", mixed or statement-style record mentions,
+    or anything keyword-routed that we don't handle deterministically)."""
+    text = _normalize_message(message)
+    if not text:
+        return "general"
+    # Explicit request to involve the caregiver/caretaker.
+    if re.search(
+        r"\b(?:can|could|would|will)?\s*(?:you\s+)?(?:please\s+)?"
+        r"(?:ask|contact|call|notify|message|tell|inform)\s+(?:my\s+|the\s+)?"
+        r"(?:caregiver|caretaker)\b", text
+    ):
+        return "caregiver"
+    # The patient is telling us something to remember — store, don't route.
+    if _is_personal_declaration(text):
+        return "personal_declaration"
+    if _is_small_talk(text):
+        return "general"
+    if _is_personal_memory_question(text):
+        return "personal_memory"
+    # Creation requests need the LLM planner (it structures save_to_routine).
+    if re.search(r"\bremind me to\b", text):
+        return None
+
+    appt_kw = bool(re.search(r"\b(appointments?|dentist|clinic|checkup|check-ups?|doctor visit|physician|consultation)\b", text))
+    med_kw = bool(re.search(r"\b(medicines?|medications?|pills?|tablets?|dosage|dose|prescription|capsules?)\b", text))
+    rem_kw = bool(re.search(r"\breminders?\b", text))
+    routine_kw = bool(re.search(r"\b(routines?|schedules?|calendar|activities|day to day|plan for today)\b", text))
+    doc_kw = bool(re.search(r"\b(reports?|documents?)\b", text)) and not med_kw
+
+    matched = [name for name, ok in (
+        ("appointment", appt_kw), ("medicine", med_kw), ("reminder", rem_kw),
+        ("routine", routine_kw), ("documents", doc_kw),
+    ) if ok]
+    if len(matched) == 1 and _is_question(text):
+        return matched[0]
+    if matched:
+        # Mixed or statement-style record mention (e.g. declaring an
+        # appointment with a time) → LLM planner keeps the save flow.
+        return None
+    if _route_tools(message):
+        return None
+    return "general"
+
+
+def _store_declaration(patient_id: str, message: str, conversation_id: str,
+                       message_id: str) -> tuple[list, str]:
+    """Persist a patient-stated fact as a long-term memory BEFORE replying.
+    LLM extraction first (rich, structured facts); a deterministic fallback
+    candidate guarantees the statement is never silently dropped.
+    Returns (results, saved_content) — saved_content is the stored fact to
+    confirm back to the patient (empty when nothing could be saved)."""
+    from agent.extraction import MemoryExtractionService
+    from agent.schemas import ExtractedFactCandidate
+
+    try:
+        candidates = MemoryExtractionService.extract_candidates(
+            patient_message=message, assistant_reply="",
+            conversation_id=conversation_id, message_id=message_id,
+        ) or []
+    except Exception:
+        candidates = []
+    if not candidates:
+        content = message if len(message) >= 5 else f"{message} note"
+        candidates = [ExtractedFactCandidate(
+            title=f"Noted: {message[:60].strip()}",
+            content=content[:500],
+            memory_type="IMPORTANT_FACT",
+            entities=["personal note"],
+            confidence=0.9,
+            importance_estimate=80.0,
+            usefulness_estimate=85.0,
+            persistence_estimate=85.0,
+            source_conversation_id=conversation_id,
+            source_message_id=message_id,
+        )]
+
+    results: list = []
+    saved_content = ""
+    for cand in candidates:
+        res = create_or_update_memory(
+            patient_id, cand, source_type="conversation",
+            source_id=conversation_id, source_message_id=message_id,
+        )
+        results.append({"candidate_title": cand.title, "memory_type": cand.memory_type, **res})
+        if not saved_content and (res.get("created") or res.get("reason") == "duplicate"):
+            saved_content = (cand.content or cand.title)[:300]
+    return results, saved_content
+
+
+def _memory_miss_reply() -> str:
+    """Honest answer when NOTHING similar is stored for a personal-memory
+    lookup, with a real next step: offer to ask the caretaker. The wording is
+    intentional — 'ask your caretaker' is what arms the yes/no escalation flow
+    on the patient's next message."""
+    return ("I searched my memories but couldn't find anything saved about that. "
+            "Would you like me to ask your caretaker about it?")
 
 
 def _route_tools(message: str) -> list[str]:
